@@ -1,2 +1,4 @@
 /nexora_env
 /data
+/vector_db
+.env

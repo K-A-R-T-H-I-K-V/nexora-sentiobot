@@ -1,8 +1,8 @@
-/nexora_env
-/data
-/vector_db
-/parent_docstore
-/summaries
+nexora_env/
+data/
+parent_docstore/
+summaries/
+vector_db/
 parents.pkl
 .env
 

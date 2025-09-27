@@ -1,4 +1,12 @@
 /nexora_env
 /data
 /vector_db
+/parent_docstore
+/summaries
+parents.pkl
 .env
+
+sample-codes.txt
+scripts/__pycache__
+
+scripts/__init__.py

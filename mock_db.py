@@ -62,3 +62,21 @@ ORDERS = {
         "items": ["LumiGlow Smart Light"]
     }
 }
+
+USERS = {
+    "alice": {
+        "password": "password123", # Add this
+        "name": "Alice",
+        "owned_products": ["Nexora Thermostat Pro", "LumiGlow Bulb"]
+    },
+    "bob": {
+        "password": "password456", # Add this
+        "name": "Bob",
+        "owned_products": ["Sentio Smart Hub"]
+    },
+    "guest": {
+        "password": "", # Guest has no password
+        "name": "Guest",
+        "owned_products": []
+    }
+}

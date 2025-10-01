@@ -4,7 +4,7 @@ import pickle
 import logging
 import json
 from datetime import datetime, timedelta
-from typing import List
+from typing import List, Dict, Any
 import streamlit as st
 from langchain_core.messages import HumanMessage, AIMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -27,6 +27,9 @@ from langchain import hub
 from langchain.memory import ConversationBufferWindowMemory
 from langchain_community.chat_message_histories import ChatMessageHistory
 
+# --- NEW: Import mock user database ---
+from mock_db import USERS
+
 # Set up logging to see the generated queries in the terminal (optional but helpful)
 logging.basicConfig()
 logging.getLogger("langchain.retrievers.multi_query").setLevel(logging.INFO)
@@ -34,6 +37,7 @@ logging.getLogger("langchain.retrievers.multi_query").setLevel(logging.INFO)
 # --- 1. Setup and Configuration ---
 load_dotenv()
 st.set_page_config(page_title="SentioBot | Nexora Support", page_icon="💡", layout="centered")
+LOG_FILE = "analytics.log"
 
 # --- Avatar URLs and CSS ---
 USER_AVATAR = "https://api.dicebear.com/7.x/adventurer/svg?seed=user"
@@ -46,10 +50,30 @@ def load_css():
             .stTextInput>div>div>input { background-color: #0D1117; border: 1px solid #30363D; border-radius: 8px; }
             .stExpander { background-color: #161B22; border-radius: 8px; border: 1px solid #30363D; }
             .stChatMessage { animation: fadeIn 0.5s; }
-            @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+            @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; translateY(0); } }
+            /* Style for feedback buttons */
+            div[data-testid="stHorizontalBlock"] > div {
+                display: flex;
+                justify-content: flex-end;
+                gap: 5px;
+                padding-top: 10px;
+            }
+            div[data-testid="stHorizontalBlock"] > div > button {
+                background-color: #161B22;
+                border: 1px solid #30363D;
+                border-radius: 5px;
+                width: 40px;
+                height: 40px;
+            }
         </style>
     """, unsafe_allow_html=True)
 load_css()
+
+# --- NEW: Analytics Logging Function ---
+def log_interaction(log_data: Dict[str, Any]):
+    """Appends a dictionary of interaction data to the log file."""
+    with open(LOG_FILE, "a", encoding="utf-8") as f:
+        f.write(json.dumps(log_data) + "\n")
 
 # --- Pydantic schemas for structured citation output ---
 class Citation(BaseModel):
@@ -138,6 +162,7 @@ def format_docs_with_ids(docs: List[Document]) -> str:
 def get_agent_executor(_retriever):
     """Creates the Agent with all its tools, including the RAG chain."""
     llm = get_llm()
+    retrieved_docs_for_logging = []
 
     @tool
     def lookup_documentation(query: str) -> str:
@@ -147,6 +172,7 @@ def get_agent_executor(_retriever):
         official documentation. Use this for any question that does not involve
         a specific order ID, serial number, or a request for a human.
         """
+        nonlocal retrieved_docs_for_logging
 
         if not query or query.strip() == "":
             return "I cannot look up documentation without a specific question. Please provide more details."
@@ -209,6 +235,14 @@ Begin!
         ])
         docs = _retriever.invoke(query)
 
+        retrieved_docs_for_logging = [
+            {"source": d.metadata.get('source', 'N/A'), "section": d.metadata.get('section_title', 'N/A')}
+            for d in docs
+        ]
+
+        if not docs:
+            return "No relevant information was found in the documentation for this query."
+        
         # New detailed log of retrieved documents
         retrieved_sources = [f"{doc.metadata.get('source', 'N/A')} | Section: {doc.metadata.get('section_title', 'N/A')}" for doc in docs]
         print("\nRETRIEVED CONTEXT:")
@@ -249,6 +283,7 @@ Begin!
 
     new_prompt_template = """## Persona & Objective
 You are SentioBot, a helpful and precise AI support agent for Nexora Electronics. Your primary objective is to resolve user issues by using tools, recalling conversation history, and strictly following all rules.
+When you receive the user's input, it may contain a special section with their profile information (like products they own). You MUST use this information to provide more relevant, personalized answers. For example, if they own a product, prioritize troubleshooting for that specific product.
 
 ---
 
@@ -289,15 +324,17 @@ Final Answer: To proceed with a warranty claim, I will need the serial number of
 """ 
 
     prompt.template = new_prompt_template + "\n\n" + prompt.template
-    
+
     agent = create_react_agent(llm, tools, prompt) # <-- FIX 3: Use the new prompt here
-    return agent, tools
+    return agent, tools, lambda: retrieved_docs_for_logging
 
 # --- 4. Main Application Logic ---
 if "messages" not in st.session_state:
     st.session_state.messages = [AIMessage(content="Hello! I am SentioBot. How can I assist you with your Nexora devices today?")]
+
 if "store" not in st.session_state:
     st.session_state.store = ChatMessageHistory()
+
 if "memory" not in st.session_state:
     # k=4 means it will remember the last 2 back-and-forth exchanges.
     st.session_state.memory = ConversationBufferWindowMemory(
@@ -306,9 +343,13 @@ if "memory" not in st.session_state:
         return_messages=True,
         chat_memory=st.session_state.store
     )
+if "current_user_id" not in st.session_state:
+    st.session_state.current_user_id = None
+if "last_interaction" not in st.session_state:
+    st.session_state.last_interaction = {}
 
 retriever = get_retriever()
-agent, tools = get_agent_executor(retriever)
+agent, tools, get_retrieved_docs = get_agent_executor(retriever)
 
 agent_executor = AgentExecutor(
     agent=agent, 
@@ -319,6 +360,9 @@ agent_executor = AgentExecutor(
 )
 
 # --- 5. UI and Chat Logic ---
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+
 with st.sidebar:
     st.markdown("""
     <div style="text-align: center;">
@@ -327,6 +371,37 @@ with st.sidebar:
         </svg>
     </div>
     """, unsafe_allow_html=True)
+    st.header("👤 User Login")
+
+    if not st.session_state.logged_in:
+        username_input = st.text_input("Username", key="username_input")
+        password_input = st.text_input("Password", type="password", key="password_input")
+
+        if st.button("Login"):
+            # Check if user exists and password is correct
+            # FIX 1: Convert username input to lowercase for case-insensitive matching
+            user_key = username_input.lower()
+
+            if user_key in USERS and USERS[user_key]["password"] == password_input:
+                st.session_state.logged_in = True
+                st.session_state.current_user_id = user_key # Use the lowercase key
+                st.session_state.messages = [AIMessage(content=f"Hello {USERS[user_key]['name']}! Welcome back.")]
+                st.session_state.memory.clear()
+                st.rerun()
+            else:
+                st.error("Incorrect username or password")
+    
+    if st.session_state.logged_in:
+        user_name = USERS[st.session_state.current_user_id]['name']
+        st.success(f"Logged in as: **{user_name}**")
+        
+        if st.button("Logout"):
+            st.session_state.logged_in = False
+            st.session_state.current_user_id = "guest"
+            st.session_state.messages = [AIMessage(content="You have been logged out. How can I help?")]
+            st.session_state.memory.clear()
+            st.rerun()
+
     st.header("About SentioBot")
     st.info("An AI-powered assistant for Nexora Electronics, providing instant support from official documentation.")
     st.header("Tech Stack")
@@ -334,16 +409,33 @@ with st.sidebar:
     
     # NEW FEATURE: Clear Chat History Button
     if st.button("Clear Conversation"):
-        st.session_state.messages = [AIMessage(content="Hello! I am SentioBot. How can I assist you with your Nexora devices today?")]
+        st.session_state.messages = [AIMessage(content=f"Hello {USERS[st.session_state.current_user_id]['name']}! How can I help?")]
         st.session_state.memory.clear()
+        st.session_state.last_interaction = {}
         st.rerun()
 
 st.title("SentioBot: Your Nexora Electronics Expert")
 
-for msg in st.session_state.messages:
+if not st.session_state.messages:
+    st.session_state.messages = [AIMessage(content="Please log in to begin, or ask a question as a Guest.")]
+
+for i, msg in enumerate(st.session_state.messages):
     avatar = USER_AVATAR if isinstance(msg, HumanMessage) else ASSISTANT_AVATAR
     with st.chat_message(msg.type, avatar=avatar):
         st.markdown(msg.content)
+        # NEW: Add feedback buttons to assistant messages
+        if isinstance(msg, AIMessage) and i > 0: # Don't add to the first greeting
+            interaction_id = st.session_state.last_interaction.get("interaction_id")
+            if interaction_id:
+                cols = st.columns([10, 1, 1])
+                with cols[1]:
+                    if st.button("👍", key=f"thumb_up_{i}"):
+                        log_interaction({"interaction_id": interaction_id, "feedback": 1})
+                        st.toast("Thanks for your feedback!", icon="😊")
+                with cols[2]:
+                    if st.button("👎", key=f"thumb_down_{i}"):
+                        log_interaction({"interaction_id": interaction_id, "feedback": -1})
+                        st.toast("Thanks! We'll use this to improve.", icon="🙏")
 
 if user_query := st.chat_input("Ask me about Nexora products..."):
     # Add user message to the display list
@@ -354,14 +446,46 @@ if user_query := st.chat_input("Ask me about Nexora products..."):
     with st.chat_message("assistant", avatar=ASSISTANT_AVATAR):
         with st.spinner("Thinking..."):
             try:
+                user_profile = USERS.get(st.session_state.current_user_id, USERS["guest"])
+                if user_profile['name'] != "Guest":
+                    user_profile_str = f"Name: {user_profile['name']}\nOwned Products: {', '.join(user_profile['owned_products'])}"
+                    
+                    combined_input = f"""
+### User Profile Context
+{user_profile_str}
+---
+### User's Question
+{user_query}
+"""
+                else:
+                    combined_input = user_query # For guests, the input is just their question
+
+                # Now, invoke the agent with only the 'input' key.
                 response = agent_executor.invoke({
-                    "input": user_query,
+                    "input": combined_input
                 })
+                
                 final_answer = response.get("output", "I'm sorry, I encountered an error.")
                 st.session_state.messages.append(AIMessage(content=final_answer))
+
+                # NEW: Log the interaction
+                interaction_id = datetime.now().strftime('%Y%m%d%H%M%S%f')
+                log_entry = {
+                    "interaction_id": interaction_id,
+                    "timestamp": datetime.now().isoformat(),
+                    "user_id": st.session_state.current_user_id,
+                    "user_query": user_query,
+                    "bot_response": final_answer,
+                    "retrieved_docs": get_retrieved_docs(),
+                    "feedback": 0 # Default feedback
+                }
+                log_interaction(log_entry)
+                st.session_state.last_interaction = log_entry # Store for feedback buttons
+                
                 st.rerun()
+
             except Exception as e:
-                error_msg = f"Sorry, I encountered an error: {str(e)}. Please try again."
+                error_msg = f"Sorry, I encountered an error: {str(e)}"
                 st.error(error_msg)
                 st.session_state.messages.append(AIMessage(content=error_msg))
                 st.rerun()

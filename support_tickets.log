@@ -33,3 +33,10 @@
   "summary": "User reported receiving a defective bulb (LumiGlow Smart Light, implied from previous conversation about order NX-2025-301 which included a LumiGlow Smart Light). The product with serial number SN-NTS-PRO-ABC123 (Nexora Thermostat Pro) has an active warranty expiring on 2026-10-22. User requests a replacement."
 }
 
+--- TICKET CREATED ---
+{
+  "ticket_id": "TICKET-1BB0E4",
+  "timestamp": "2025-10-01 19:53:45",
+  "summary": "User reported a defective Nexora Thermostat Pro (SN-NTS-PRO-ABC123) which is under active warranty. User requests to initiate a warranty claim process."
+}
+

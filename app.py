@@ -1,28 +1,29 @@
-# app.py - Final Production Version
-
 import os
 import re
 import pickle
-import logging 
+import logging
+import json
+from datetime import datetime, timedelta
 from typing import List
 import streamlit as st
 from langchain_core.messages import HumanMessage, AIMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
-from langchain.chains import create_history_aware_retriever
-from langchain.chains.combine_documents import create_stuff_documents_chain
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder, PromptTemplate
 from dotenv import load_dotenv
-from langchain.retrievers import ParentDocumentRetriever, EnsembleRetriever
 from langchain_community.retrievers import BM25Retriever
 from langchain.storage import LocalFileStore
 from langchain.storage._lc_store import create_kv_docstore
 from langchain.retrievers.multi_query import MultiQueryRetriever
-from langchain.text_splitter import RecursiveCharacterTextSplitter
 from pydantic import BaseModel, Field
 from langchain_core.runnables import RunnablePassthrough
 from langchain.docstore.document import Document
+from langchain.tools import tool 
+from langchain.agents import AgentExecutor, create_react_agent
+from tools import check_order_status, check_warranty_status, create_support_ticket
+from langchain.retrievers import EnsembleRetriever
+from langchain import hub
 
 # Set up logging to see the generated queries in the terminal (optional but helpful)
 logging.basicConfig()
@@ -38,7 +39,7 @@ ASSISTANT_AVATAR = "https://api.dicebear.com/7.x/bottts/svg?seed=sentiobot&backg
 def load_css():
     st.markdown("""
         <style>
-            .stApp { background-color: #0E117; }
+            .stApp { background-color: #0E1117; }
             [data-testid="stSidebar"] { background-color: #161B22; border-right: 1px solid #30363D; }
             .stTextInput>div>div>input { background-color: #0D1117; border: 1px solid #30363D; border-radius: 8px; }
             .stExpander { background-color: #161B22; border-radius: 8px; border: 1px solid #30363D; }
@@ -70,19 +71,31 @@ def get_retriever():
     store = create_kv_docstore(byte_store)
     with open(parent_list_path, 'rb') as f:
         all_parent_docs = pickle.load(f)
-    child_splitter = RecursiveCharacterTextSplitter(chunk_size=300, chunk_overlap=50)
-    parent_retriever = ParentDocumentRetriever(
-        vectorstore=vectorstore, docstore=store,
-        id_key="doc_id", child_splitter=child_splitter
-    )
+
+    # Note: We are not using ParentDocumentRetriever directly in the agent,
+    # but keeping the setup here in case you want to switch back or test.
+    # The multiquery retriever is what we will pass to the agent.
     bm25_retriever = BM25Retriever.from_documents(all_parent_docs)
-    bm25_retriever.k = 10
+    chroma_retriever = vectorstore.as_retriever(search_kwargs={"k": 5})
+    
     ensemble_retriever = EnsembleRetriever(
-        retrievers=[parent_retriever, bm25_retriever], weights=[0.5, 0.5]
+        retrievers=[bm25_retriever, chroma_retriever],
+        weights=[0.5, 0.5]
     )
+
+    template = """You are an AI language model assistant. Your task is to generate 3
+    different versions of the given user question to retrieve relevant documents from a vector
+    database. By generating multiple perspectives on the user question, your goal is to help
+    the user overcome some of the limitations of distance-based similarity search.
+    Provide these alternative questions separated by newlines.
+    Original question: {question}"""
+    prompt_perspectives = PromptTemplate.from_template(template)
+
     llm = get_llm()
     multiquery_retriever = MultiQueryRetriever.from_llm(
-        retriever=ensemble_retriever, llm=llm
+        retriever=ensemble_retriever, 
+        llm=llm,
+        prompt=prompt_perspectives
     )
     print("✅ Retriever initialized.")
     return multiquery_retriever
@@ -96,27 +109,13 @@ def get_llm():
     return ChatGoogleGenerativeAI(model="gemini-2.5-flash", google_api_key=google_api_key, temperature=0.1)
 
 # --- Formatting Functions ---
-def format_response(text: str) -> str:
-    text = text.strip()
-    text = re.sub(r'\n{3,}', '\n\n', text)
-    return text
-
-# <<< FINAL FIX: Rewritten for simplicity and robustness >>>
 def format_answer_with_citations(response_obj: AnswerWithCitations, sources: list) -> str:
-    """Appends citation markers to the end of the answer and lists the sources."""
     formatted_answer = response_obj.answer
-    
-    # Get a unique, sorted list of source IDs that the LLM cited
     cited_source_ids = sorted(list(set(c.source_id for c in response_obj.citations)))
-    
-    # Create the citation markers (e.g., "[1][2]")
     citation_markers = "".join(f" [{i+1}]" for i in range(len(cited_source_ids)))
-    
-    # Append the markers to the end of the answer
     if citation_markers:
         formatted_answer += f" {citation_markers}"
 
-    # Create the reference list
     citation_references = []
     for i, source_id in enumerate(cited_source_ids):
         if 1 <= source_id <= len(sources):
@@ -127,27 +126,39 @@ def format_answer_with_citations(response_obj: AnswerWithCitations, sources: lis
 
     if citation_references:
         formatted_answer += "\n\n---\n**Sources:**\n" + "\n".join(citation_references)
-        
     return formatted_answer
 
 def format_docs_with_ids(docs: List[Document]) -> str:
-    formatted = []
-    for i, doc in enumerate(docs):
-        formatted.append(f"---\nSource ID: {i+1}\nContent: {doc.page_content}\n---")
-    return "\n\n".join(formatted)
+    return "\n\n".join(f"---\nSource ID: {i+1}\nContent: {doc.page_content}\n---" for i, doc in enumerate(docs))
 
-# --- 3. Chain Definition ---
-def get_context_aware_rag_chain(_retriever):
+# --- 3. Agent and Tools Definition ---
+@st.cache_resource(show_spinner="Initializing Agent...")
+def get_agent_executor(_retriever, chat_history: List):
+    """Creates the Agent with all its tools, including the RAG chain."""
     llm = get_llm()
-    structured_llm = llm.with_structured_output(AnswerWithCitations)
 
-    contextualize_q_system_prompt = "Given a chat history and the latest user question which might reference context in the chat history, formulate a standalone question which can be understood without the chat history. Do NOT answer the question, just reformulate it if needed and otherwise return it as is."
-    contextualize_q_prompt = ChatPromptTemplate.from_messages(
-        [("system", contextualize_q_system_prompt), MessagesPlaceholder("chat_history"), ("human", "{input}")]
-    )
-    history_aware_retriever = create_history_aware_retriever(llm, _retriever, contextualize_q_prompt)
-    
-    qa_system_prompt = """## Persona and Role
+    @tool
+    def lookup_documentation(query: str) -> str:
+        """
+        Use this tool to answer general questions about Nexora products, policies,
+        troubleshooting guides, and technical specifications. It searches the
+        official documentation. Use this for any question that does not involve
+        a specific order ID, serial number, or a request for a human.
+        """
+
+        if not query or query.strip() == "":
+            return "I cannot look up documentation without a specific question. Please provide more details."
+
+        # New detailed log for the RAG tool
+        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        print("\n" + "="*60)
+        print(f"[{timestamp}] Executing Tool: lookup_documentation")
+        print("-"*60)
+        print(f"INPUT QUERY: {query}")
+
+        structured_llm_rag = llm.with_structured_output(AnswerWithCitations)
+        
+        qa_system_prompt = """## Persona and Role
 You are SentioBot, a highly advanced AI customer support assistant for Nexora Electronics. Your persona is professional, precise, and exceptionally helpful.
 ## Core Directives
 1.  **Analyze the `Provided Context`:** The context contains several source documents. Each document is clearly marked with a `Source ID` (e.g., `Source ID: 1`).
@@ -189,30 +200,50 @@ Begin!
 
 `Question`:
 {input}"""
-    
-    qa_prompt = ChatPromptTemplate.from_messages(
-        [("system", qa_system_prompt), MessagesPlaceholder(variable_name="chat_history")]
-    )
-    
-    rag_chain_from_docs = (
-        RunnablePassthrough.assign(context=(lambda x: format_docs_with_ids(x["context"])))
-        | qa_prompt
-        | structured_llm
-    )
+        qa_prompt = ChatPromptTemplate.from_messages(
+            [("system", qa_system_prompt), MessagesPlaceholder(variable_name="chat_history")]
+        )
+        docs = _retriever.invoke(query)
 
-    rag_chain = (
-        RunnablePassthrough.assign(context=history_aware_retriever)
-        .assign(answer=rag_chain_from_docs)
-    )
+        # New detailed log of retrieved documents
+        retrieved_sources = [f"{doc.metadata.get('source', 'N/A')} | Section: {doc.metadata.get('section_title', 'N/A')}" for doc in docs]
+        print("\nRETRIEVED CONTEXT:")
+        print(json.dumps(retrieved_sources, indent=2))
+        print("="*60 + "\n")
 
-    return rag_chain
+        rag_chain = (
+            RunnablePassthrough.assign(context=(lambda x: format_docs_with_ids(x["context"])))
+            | qa_prompt
+            | structured_llm_rag
+        )
+        response = rag_chain.invoke({
+            "context": docs, 
+            "input": query, 
+            "chat_history": chat_history
+        })
+        if isinstance(response, AnswerWithCitations):
+            return format_answer_with_citations(response, docs)
+        return "I found some information in the documentation, but couldn't structure it correctly."
+
+    tools = [
+        lookup_documentation,
+        check_order_status,
+        check_warranty_status,
+        create_support_ticket
+    ]
+    
+    # FIX 2: Pull the official, compatible prompt from LangChain Hub
+    prompt = hub.pull("hwchase17/react")
+
+    agent = create_react_agent(llm, tools, prompt) # <-- FIX 3: Use the new prompt here
+    return AgentExecutor(agent=agent, tools=tools, verbose=True, handle_parsing_errors=True)
 
 # --- 4. Main Application Logic ---
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = [AIMessage(content="Hello! I am SentioBot. How can I assist you with your Nexora devices today?")]
-    
+
 retriever = get_retriever()
-rag_chain = get_context_aware_rag_chain(retriever)
+agent_executor = get_agent_executor(retriever, st.session_state.chat_history)
 
 # --- 5. UI and Chat Logic ---
 with st.sidebar:
@@ -222,45 +253,41 @@ with st.sidebar:
             <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
         </svg>
     </div>
-    """)
+    """, unsafe_allow_html=True)
     st.header("About SentioBot")
     st.info("An AI-powered assistant for Nexora Electronics, providing instant support from official documentation.")
     st.header("Tech Stack")
     st.markdown("- Streamlit\n- LangChain\n- Google Gemini\n- ChromaDB\n- BM25")
+    
+    # NEW FEATURE: Clear Chat History Button
+    if st.button("Clear Conversation"):
+        st.session_state.chat_history = [AIMessage(content="Hello! I am SentioBot. How can I assist you with your Nexora devices today?")]
+        st.rerun()
 
 st.title("SentioBot: Your Nexora Electronics Expert")
 
 for msg in st.session_state.chat_history:
-    if isinstance(msg, AIMessage):
-        with st.chat_message("assistant", avatar=ASSISTANT_AVATAR):
-            st.markdown(msg.content)
-            if sources := msg.additional_kwargs.get("sources"):
-                with st.expander("View All Retrieved Sources"):
-                    for source in sources:
-                        st.info(f"Source: {source.metadata.get('source', 'N/A')} | Section: {source.metadata.get('section_title', 'N/A')}")
-    elif isinstance(msg, HumanMessage):
-        with st.chat_message("user", avatar=USER_AVATAR):
-            st.markdown(msg.content)
+    avatar = USER_AVATAR if isinstance(msg, HumanMessage) else ASSISTANT_AVATAR
+    with st.chat_message(msg.type, avatar=avatar):
+        st.markdown(msg.content)
 
 if user_query := st.chat_input("Ask me about Nexora products..."):
     st.session_state.chat_history.append(HumanMessage(content=user_query))
-    with st.spinner("Thinking..."):
-        try:
-            response = rag_chain.invoke({"input": user_query, "chat_history": st.session_state.chat_history})
-            response_obj = response.get("answer")
-            sources = response.get("context", [])
-            
-            if isinstance(response_obj, AnswerWithCitations):
-                final_answer = format_answer_with_citations(response_obj, sources)
-            else:
-                final_answer = "Sorry, I could not generate a valid structured answer."
+    with st.chat_message("user", avatar=USER_AVATAR):
+        st.markdown(user_query)
 
-            ai_message = AIMessage(content=final_answer, additional_kwargs={"sources": sources})
-            st.session_state.chat_history.append(ai_message)
-            st.rerun()
-        except Exception as e:
-            error_msg = f"Sorry, I encountered an error: {str(e)}. Please try again or contact support."
-            st.session_state.chat_history.append(AIMessage(content=error_msg))
-            st.rerun()
-            
-            
+    with st.chat_message("assistant", avatar=ASSISTANT_AVATAR):
+        with st.spinner("Thinking..."):
+            try:
+                response = agent_executor.invoke({
+                    "input": user_query,
+                    "chat_history": st.session_state.chat_history
+                })
+                final_answer = response.get("output", "I'm sorry, I encountered an error.")
+                st.markdown(final_answer)
+                ai_message = AIMessage(content=final_answer)
+                st.session_state.chat_history.append(ai_message)
+            except Exception as e:
+                error_msg = f"Sorry, I encountered an error: {str(e)}. Please try again."
+                st.error(error_msg)
+                st.session_state.chat_history.append(AIMessage(content=error_msg))

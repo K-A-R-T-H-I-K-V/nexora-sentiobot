@@ -3,6 +3,7 @@ data/
 parent_docstore/
 summaries/
 vector_db/
+__pycache__/
 parents.pkl
 .env
 

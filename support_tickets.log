@@ -1,0 +1,10 @@
+--- TICKET: TICKET-71C118 | TIME: 2025-09-30 19:39:59 ---
+SUMMARY: User reported receiving a defective Lumiglow bulb. No serial number or order ID provided yet.
+
+--- TICKET CREATED ---
+{
+  "ticket_id": "TICKET-F1C46A",
+  "timestamp": "2025-09-30 22:50:48",
+  "summary": "User received a defective bulb and needs to initiate a replacement. They will need to provide the product's serial number and proof of purchase."
+}
+

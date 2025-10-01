@@ -41,8 +41,8 @@ def check_order_status(order_id: str) -> str:
         items_list = "\n".join([f"- {item}" for item in order['items']])
         return (
             f"I've found the details for order **{order_id}**:\n\n"
-            f"**Status:** {order['status']}\n"
-            f"**Items:**\n{items_list}\n"
+            f"**Status:** {order['status']}\n\n"
+            f"**Items:**\n{items_list}\n\n"
             f"*{shipped_date}*"
         )
 

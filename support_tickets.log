@@ -1,10 +1,28 @@
---- TICKET: TICKET-71C118 | TIME: 2025-09-30 19:39:59 ---
-SUMMARY: User reported receiving a defective Lumiglow bulb. No serial number or order ID provided yet.
-
 --- TICKET CREATED ---
 {
   "ticket_id": "TICKET-F1C46A",
   "timestamp": "2025-09-30 22:50:48",
   "summary": "User received a defective bulb and needs to initiate a replacement. They will need to provide the product's serial number and proof of purchase."
+}
+
+--- TICKET CREATED ---
+{
+  "ticket_id": "TICKET-FF6E10",
+  "timestamp": "2025-10-01 11:05:16",
+  "summary": "User received a defective bulb and needs to initiate a replacement. The documentation states that Nexora replaces defective products under warranty and that the user needs to contact support to initiate a replacement."
+}
+
+--- TICKET CREATED ---
+{
+  "ticket_id": "TICKET-A3AC6C",
+  "timestamp": "2025-10-01 11:08:07",
+  "summary": "User reported a broken bulb and needs assistance with replacement or repair options."
+}
+
+--- TICKET CREATED ---
+{
+  "ticket_id": "TICKET-4F02C2",
+  "timestamp": "2025-10-01 11:36:31",
+  "summary": "User wants to talk to a human agent to request a replacement for a defective product."
 }
 

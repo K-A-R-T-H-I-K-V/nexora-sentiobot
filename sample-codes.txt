@@ -1,0 +1,1854 @@
+# working app.py version -> gemini-2.5-flash
+# app.py
+
+import os
+import streamlit as st
+from langchain_core.messages import HumanMessage, AIMessage
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_chroma import Chroma
+from langchain.chains import create_history_aware_retriever, create_retrieval_chain
+from langchain.chains.combine_documents import create_stuff_documents_chain
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from dotenv import load_dotenv
+from langchain.retrievers import ContextualCompressionRetriever
+from langchain_cohere import CohereRerank
+from streamlit_chat import message
+
+# --- 1. Setup and Configuration ---
+load_dotenv()
+st.set_page_config(page_title="SentioBot | Nexora Support", page_icon="💡", layout="centered")
+
+# --- UI OVERHAUL: Custom CSS for a professional, modern look ---
+def load_css():
+    st.markdown("""
+        <style>
+            /* General body styling */
+            .stApp {
+                background-color: #0E1117; /* Dark background */
+            }
+            
+            /* Sidebar styling */
+            [data-testid="stSidebar"] {
+                background-color: #161B22;
+                border-right: 1px solid #30363D;
+            }
+            .st-emotion-cache-16txtl3 { color: #C9D1D9; } /* Sidebar header */
+            .st-emotion-cache-1y4p8pa { color: #8B949E; } /* Sidebar info text */
+
+            /* Chat input box styling */
+            .stTextInput>div>div>input {
+                background-color: #0D1117;
+                color: #C9D1D9;
+                border: 1px solid #30363D;
+                border-radius: 8px;
+            }
+            .stTextInput>div>div>input:focus {
+                border-color: #58A6FF;
+                box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.25);
+            }
+
+            /* Expander (for sources) styling */
+            .stExpander {
+                background-color: #161B22;
+                border-radius: 8px;
+                border: 1px solid #30363D;
+            }
+            .stExpander header {
+                color: #8B949E;
+            }
+        </style>
+    """, unsafe_allow_html=True)
+
+load_css()
+
+# --- 2. Model and Retriever Initialization ---
+@st.cache_resource
+def get_retriever():
+    embedding_model = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+    vector_store = Chroma(persist_directory="vector_db", embedding_function=embedding_model)
+    base_retriever = vector_store.as_retriever(search_kwargs={'k': 10})
+    reranker = CohereRerank(model="rerank-english-v3.0", top_n=3)
+    compression_retriever = ContextualCompressionRetriever(base_compressor=reranker, base_retriever=base_retriever)
+    return compression_retriever
+
+@st.cache_resource
+def get_llm():
+    """Initializes and returns the Gemini LLM."""
+    google_api_key = os.getenv("GOOGLE_API_KEY")
+    if not google_api_key:
+        st.error("Google API key is not set! Please add it to your .env file.")
+        st.stop()
+        
+    return ChatGoogleGenerativeAI(
+        model="gemini-2.5-flash",  # Current stable free-tier model (Sept 2025)
+        google_api_key=google_api_key,
+        temperature=0.2
+    )
+
+# --- 3. Chain Definition (The Core Logic) ---
+def get_context_aware_rag_chain(_retriever):
+    llm = get_llm()
+    contextualize_q_system_prompt = """Given a chat history and the latest user question which might reference context in the chat history, formulate a standalone question which can be understood without the chat history. Do NOT answer the question, just reformulate it if needed and otherwise return it as is."""
+    contextualize_q_prompt = ChatPromptTemplate.from_messages([("system", contextualize_q_system_prompt), MessagesPlaceholder("chat_history"), ("human", "{input}")])
+    history_aware_retriever = create_history_aware_retriever(llm, _retriever, contextualize_q_prompt)
+    qa_system_prompt = """You are SentioBot, an expert customer support assistant for Nexora Electronics. Your tone must be professional, helpful, and friendly. You must answer the user's question based ONLY on the provided context. If the context doesn't contain the answer, you MUST state that you don't have enough information and suggest contacting human support. Never make up information. Be concise and clear in your answers.
+
+Context:
+{context}"""
+    qa_prompt = ChatPromptTemplate.from_messages([("system", qa_system_prompt), MessagesPlaceholder("chat_history"), ("human", "{input}")])
+    question_answer_chain = create_stuff_documents_chain(llm, qa_prompt)
+    rag_chain = create_retrieval_chain(history_aware_retriever, question_answer_chain)
+    return rag_chain
+
+# --- 4. Main Application Logic ---
+retriever = get_retriever()
+rag_chain = get_context_aware_rag_chain(retriever)
+
+# --- 5. Beautiful UI and Chat Logic ---
+logo_svg = """
+<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 24 24" fill="none" stroke="#58A6FF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-zap">
+  <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+</svg>
+"""
+with st.sidebar:
+    st.markdown(logo_svg, unsafe_allow_html=True)
+    st.header("About SentioBot")
+    st.info("An AI-powered assistant for Nexora Electronics, providing instant support from official documentation.")
+    st.header("Tech Stack")
+    st.markdown("- Streamlit\n- LangChain\n- Google Gemini\n- ChromaDB\n- Cohere")
+
+st.title("SentioBot: Your Nexora Electronics Expert")
+
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = [AIMessage(content="Hello! I am SentioBot. How can I assist you with your Nexora devices today?")]
+
+# Render existing chat history (non-streaming for past messages)
+for i, msg in enumerate(st.session_state.chat_history):
+    if isinstance(msg, HumanMessage):
+        message(msg.content, is_user=True, key=f"user_msg_{i}", avatar_style="adventurer-neutral")
+    else:  # AIMessage
+        message(msg.content, is_user=False, key=f"ai_msg_{i}", avatar_style="bottts")
+        if msg.additional_kwargs.get("sources"):
+            with st.expander("View Sources"):
+                for source in msg.additional_kwargs["sources"]:
+                    st.info(f"Source: {source.metadata.get('source', 'N/A')} | Section: {source.metadata.get('section_title', 'N/A')}")
+
+# Streaming for new messages
+if user_query := st.chat_input("Ask me about Nexora products..."):
+    # Add user message to history
+    st.session_state.chat_history.append(HumanMessage(content=user_query))
+    
+    # Display user's message immediately
+    message(user_query, is_user=True, key=f"user_msg_{len(st.session_state.chat_history) - 1}", avatar_style="adventurer-neutral")
+
+    # Create a chat message container for the assistant
+    with st.chat_message("assistant", avatar_style="bottts"):
+        response_container = st.empty()  # For streaming updates
+
+    with st.spinner("Thinking..."):
+        try:
+            # Stream the response
+            full_response_stream = rag_chain.stream({"input": user_query, "chat_history": st.session_state.chat_history})
+            
+            final_answer = ""
+            sources = []
+            
+            # Process chunks
+            for chunk in full_response_stream:
+                if "answer" in chunk:
+                    final_answer += chunk["answer"]
+                    # Update UI with cursor for "typing" effect
+                    response_container.markdown(final_answer + "▌")
+                if "context" in chunk:
+                    sources = chunk["context"]  # Collect sources (may arrive in last chunk)
+            
+            # Final clean display (no cursor)
+            response_container.markdown(final_answer)
+            
+            # Add to history with sources
+            ai_message = AIMessage(content=final_answer, additional_kwargs={"sources": sources})
+            st.session_state.chat_history.append(ai_message)
+            
+            # Display sources expander (post-stream)
+            if sources:
+                with st.expander("View Sources"):
+                    for source in sources:
+                        st.info(f"Source: {source.metadata.get('source', 'N/A')} | Section: {source.metadata.get('section_title', 'N/A')}")
+                        
+        except Exception as e:
+            error_msg = f"Sorry, I encountered an error: {str(e)}. Please try again or contact support."
+            response_container.markdown(error_msg)
+            st.session_state.chat_history.append(AIMessage(content=error_msg))
+            st.error(error_msg)
+
+    st.rerun()  # Re-render to show everything
+
+
+
+# previous working version of ETL before updating our policies and also our manuals
+# scripts/ingest.py - ETL (Extract, Transform, Load)
+
+import os
+import shutil
+import re
+from langchain.docstore.document import Document
+from langchain_community.document_loaders import TextLoader, CSVLoader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_chroma import Chroma
+from langchain_huggingface import HuggingFaceEmbeddings
+
+# --- Constants (Paths are now robust) ---
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
+MANUALS_PATH = os.path.join(PROJECT_ROOT, "data", "manuals")
+POLICIES_PATH = os.path.join(PROJECT_ROOT, "data", "policies.txt")
+FAQS_PATH = os.path.join(PROJECT_ROOT, "data", "faqs.csv")
+DB_PATH = os.path.join(PROJECT_ROOT, "vector_db")
+
+# We'll keep the text splitter for non-markdown docs like policies.txt
+TEXT_SPLITTER = RecursiveCharacterTextSplitter(chunk_size=1200, chunk_overlap=150)
+embedding_model = HuggingFaceEmbeddings(
+    model_name="all-MiniLM-L6-v2", model_kwargs={'device': 'cpu'}
+)
+
+def chunk_markdown_by_section(markdown_text: str, source: str) -> list[Document]:
+    """
+    A sophisticated chunking function for Markdown files.
+    Splits the document by '##' headers, creating a Document for each section
+    with rich metadata.
+    """
+    # Split the document by '##' headers, keeping the header text
+    # The regex looks for '\n## ' which is a more reliable split point
+    sections = re.split(r'\n## ', markdown_text)
+    
+    # The first part of the split is the content before the first '##'
+    # It might be an introduction or title section
+    header_section = sections[0]
+    
+    # The rest of the splits start with the header title
+    remaining_sections = sections[1:]
+    
+    documents = []
+    
+    # Handle the initial content (document title, introduction)
+    if header_section.strip():
+        # The first line is often the main title, let's extract it
+        title = header_section.split('\n', 1)[0].replace('# ', '').strip()
+        documents.append(Document(
+            page_content=header_section.strip(),
+            metadata={"source": source, "section_title": title}
+        ))
+        
+    # Process each subsequent section
+    for section in remaining_sections:
+        if not section.strip():
+            continue
+        
+        # The first line of the section is the title
+        parts = section.split('\n', 1)
+        title = parts[0].strip()
+        content = parts[1].strip() if len(parts) > 1 else ""
+        
+        # Re-add the header to the content for full context
+        full_content = f"## {title}\n{content}"
+        
+        documents.append(Document(
+            page_content=full_content,
+            metadata={"source": source, "section_title": title}
+        ))
+        
+    return documents
+
+def load_and_process_documents():
+    """Loads all documents and applies the appropriate chunking strategy."""
+    all_chunks = []
+
+    # --- Process Markdown Manuals with our custom function ---
+    for filename in os.listdir(MANUALS_PATH):
+        if filename.endswith(".md"):
+            filepath = os.path.join(MANUALS_PATH, filename)
+            with open(filepath, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            # Use our sophisticated chunking for Markdown
+            md_chunks = chunk_markdown_by_section(content, filename)
+            all_chunks.extend(md_chunks)
+            print(f"Processed {filename} into {len(md_chunks)} context-aware chunks.")
+
+    # --- Process Policies (using standard text splitter) ---
+    policy_loader = TextLoader(POLICIES_PATH)
+    policy_docs = policy_loader.load()
+    policy_chunks = TEXT_SPLITTER.split_documents(policy_docs)
+    all_chunks.extend(policy_chunks)
+    print(f"Processed policies into {len(policy_chunks)} chunks.")
+
+    # --- Process FAQs (no chunking needed, they are already atomic) ---
+    faq_loader = CSVLoader(file_path=FAQS_PATH, source_column="Question", metadata_columns=["Category"])
+    faq_docs = faq_loader.load()
+    # You could add the product category to the metadata here if needed
+    all_chunks.extend(faq_docs)
+    print(f"Loaded {len(faq_docs)} FAQs as individual documents.")
+    
+    return all_chunks
+
+def main():
+    """The main data ingestion pipeline."""
+    print("🚀 Starting sophisticated data ingestion process...")
+    
+    chunks = load_and_process_documents()
+    
+    # Clean up old database
+    if os.path.exists(DB_PATH):
+        print(f"Clearing existing database at {DB_PATH}")
+        shutil.rmtree(DB_PATH)
+
+    # Create the new vector store
+    print(f"Creating vector store with {len(chunks)} total documents...")
+    vector_store = Chroma.from_documents(
+        documents=chunks,
+        embedding=embedding_model,
+        persist_directory=DB_PATH
+    )
+    print(f"✅ Vector store created successfully with {vector_store._collection.count()} vectors.")
+
+if __name__ == "__main__":
+    main()
+
+
+### MY FAVOURITES UI style
+# # app.py - Final Stable Version (with Post-Processing for Formatting)
+
+# import os
+# import re  # Import the regular expression module
+# import streamlit as st
+# from langchain_core.messages import HumanMessage, AIMessage
+# from langchain_google_genai import ChatGoogleGenerativeAI
+# from langchain_huggingface import HuggingFaceEmbeddings
+# from langchain_chroma import Chroma
+# from langchain.chains import create_history_aware_retriever, create_retrieval_chain
+# from langchain.chains.combine_documents import create_stuff_documents_chain
+# from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+# from dotenv import load_dotenv
+# from langchain.retrievers import ParentDocumentRetriever
+# from langchain_community.retrievers import BM25Retriever
+# from langchain.storage import InMemoryStore
+# from langchain_cohere import CohereRerank
+# from langchain.retrievers import ContextualCompressionRetriever, EnsembleRetriever
+# from langchain.text_splitter import RecursiveCharacterTextSplitter
+# from streamlit_chat import message
+# from scripts.ingest import load_and_process_documents as load_ingested_data
+
+# # --- 1. Setup and Configuration ---
+# load_dotenv()
+# st.set_page_config(page_title="SentioBot | Nexora Support", page_icon="💡", layout="centered")
+
+# # --- UI: Custom CSS for Reference Style ---
+# def load_css():
+#     st.markdown("""
+#         <style>
+#             .stApp { background-color: #0E1117; }
+#             [data-testid="stSidebar"] { background-color: #161B22; border-right: 1px solid #30363D; }
+#             .stTextInput>div>div>input { background-color: #0D1117; border: 1px solid #30363D; border-radius: 8px; }
+#             .stExpander { background-color: #161B22; border-radius: 8px; border: 1px solid #30363D; }
+#             .stChatMessage { animation: fadeIn 0.5s; }
+#             @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+#         </style>
+#     """, unsafe_allow_html=True)
+
+# load_css()
+
+# # --- 2. Model and Retriever Initialization ---
+# @st.cache_resource(show_spinner="Initializing SentioBot...")
+# def get_retriever():
+#     if "all_parent_docs" not in st.session_state:
+#         print("Loading ingested data for the first time...")
+#         parent_docs, _ = load_ingested_data()
+#         if not parent_docs:
+#             st.error("No documents loaded. Please run scripts/ingest.py first.")
+#             st.stop()
+#         st.session_state.all_parent_docs = parent_docs
+#     all_parent_docs = st.session_state.all_parent_docs
+#     embedding_model = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+#     if not os.path.exists("vector_db"):
+#         st.error("Vector database not found. Please run scripts/ingest.py to create it.")
+#         st.stop()
+#     vectorstore = Chroma(persist_directory="vector_db", embedding_function=embedding_model)
+#     store = InMemoryStore()
+#     store.mset([(doc.page_content, doc) for doc in all_parent_docs])
+#     child_splitter = RecursiveCharacterTextSplitter(chunk_size=300, chunk_overlap=50)
+#     parent_retriever = ParentDocumentRetriever(
+#         vectorstore=vectorstore, docstore=store, child_splitter=child_splitter
+#     )
+#     bm25_retriever = BM25Retriever.from_documents(all_parent_docs)
+#     bm25_retriever.k = 10
+#     ensemble_retriever = EnsembleRetriever(
+#         retrievers=[parent_retriever, bm25_retriever], weights=[0.6, 0.4]
+#     )
+#     reranker = CohereRerank(model="rerank-english-v3.0", top_n=3)
+#     compression_retriever = ContextualCompressionRetriever(
+#         base_compressor=reranker, base_retriever=ensemble_retriever
+#     )
+#     return compression_retriever
+
+# @st.cache_resource(show_spinner=False)
+# def get_llm():
+#     google_api_key = os.getenv("GOOGLE_API_KEY")
+#     if not google_api_key:
+#         st.error("Google API key is not set! Please add it to your .env file.")
+#         st.stop()
+#     return ChatGoogleGenerativeAI(model="gemini-2.5-flash", google_api_key=google_api_key, temperature=0.2)
+
+# # --- NEW: Function to clean up AI response formatting ---
+# def format_response(text: str) -> str:
+#     """
+#     Cleans and beautifies AI responses:
+#     - Preserves Markdown (headings, bullets, bold, lists).
+#     - Normalizes excessive newlines/spaces.
+#     - Guarantees polished, professional output.
+#     """
+#     # 1. Strip leading/trailing whitespace
+#     text = text.strip()
+
+#     # 2. Normalize line endings (remove trailing spaces on each line)
+#     lines = [line.rstrip() for line in text.splitlines()]
+
+#     # 3. Remove duplicate blank lines (max 2)
+#     cleaned = []
+#     blank_count = 0
+#     for line in lines:
+#         if line.strip() == "":
+#             blank_count += 1
+#             if blank_count <= 1:  # allow only one empty line
+#                 cleaned.append("")
+#         else:
+#             blank_count = 0
+#             cleaned.append(line)
+
+#     # 4. Rebuild
+#     text = "\n".join(cleaned)
+
+#     # 5. Ensure no more than 2 consecutive newlines
+#     text = re.sub(r"\n{3,}", "\n\n", text)
+
+#     return text.strip()
+
+# # --- 3. Chain Definition ---
+# def get_context_aware_rag_chain(_retriever):
+#     llm = get_llm()
+#     contextualize_q_system_prompt = "Given a chat history and the latest user question which might reference context in the chat history, formulate a standalone question which can be understood without the chat history. Do NOT answer the question, just reformulate it if needed and otherwise return it as is."
+#     contextualize_q_prompt = ChatPromptTemplate.from_messages(
+#         [("system", contextualize_q_system_prompt), MessagesPlaceholder("chat_history"), ("human", "{input}")]
+#     )
+#     history_aware_retriever = create_history_aware_retriever(llm, _retriever, contextualize_q_prompt)
+    
+#     # Using the superior prompt to get the best possible output from the model
+#     qa_system_prompt = """## Persona and Role
+# You are SentioBot, a highly advanced AI customer support assistant for Nexora Electronics. Your persona is professional, precise, and exceptionally helpful.
+
+# ## Core Directives
+# 1.  **Absolute Grounding:** You MUST base your answers exclusively on the information present in the `Provided Context`. Do not use any external knowledge.
+# 2.  **No Fabrication:** You MUST NOT invent or infer any details, product features, or procedures not explicitly mentioned in the context.
+# 3.  **Fallback Protocol:** If the answer is not in the context, you MUST state clearly: "I do not have enough information to answer that question. For further assistance, please contact our human support team."
+
+# ## Formatting Rules (Strict)
+# 1.  **Markdown is Mandatory:** You MUST use Markdown for all formatting. Use `##` for main headings and `*` for bullet points. Use `**bold**` for emphasis on key terms.
+# 2.  **Spacing is Critical:** You MUST follow these spacing rules without deviation:
+#     - Use two newlines (`\n\n`) to separate paragraphs or to separate a heading from a paragraph.
+#     - Use one newline (`\n`) to separate items in a bulleted list.
+#     - **NEVER use more than two consecutive newlines.** Your output must be compact and clean.
+
+# ## Example of Perfect Execution (Few-Shot Example)
+# ---
+# **User Question:** How do I connect my new thermostat to my Wi-Fi?
+
+# **Provided Context:**
+# Section: Wi-Fi Setup
+# To connect the Nexora Thermostat Pro, first ensure Bluetooth is enabled on your smartphone. Open the Nexora Home app and tap 'Add Device'. The app will scan for the thermostat. Once found, select it and you will be prompted to enter your Wi-Fi network's password. The device supports 2.4GHz networks only.
+
+# **Your Perfect Response:**
+# I can certainly help you connect your Nexora Thermostat Pro to Wi-Fi.
+
+# ## Wi-Fi Connection Steps
+
+# Please follow these steps using the Nexora Home app on your smartphone:
+
+# * **Enable Bluetooth:** Make sure Bluetooth is turned on on your smartphone before you begin.
+# * **Add Device:** In the app, tap the 'Add Device' button. The app will automatically start scanning for your thermostat.
+# * **Select and Connect:** Once your thermostat appears in the app, select it and enter your Wi-Fi password when prompted.
+
+# **Important Note:** Please ensure you are connecting to a **2.4GHz Wi-Fi network**, as the Thermostat Pro does not support 5GHz networks.
+# ---
+
+# Begin!
+
+# Context:
+# {context}"""
+#     qa_prompt = ChatPromptTemplate.from_messages(
+#         [("system", qa_system_prompt), MessagesPlaceholder("chat_history"), ("human", "{input}")]
+#     )
+#     question_answer_chain = create_stuff_documents_chain(llm, qa_prompt)
+#     rag_chain = create_retrieval_chain(history_aware_retriever, question_answer_chain)
+#     return rag_chain
+
+# # --- 4. Main Application Logic ---
+# if "chat_history" not in st.session_state:
+#     st.session_state.chat_history = [AIMessage(content="Hello! I am SentioBot. How can I assist you with your Nexora devices today?")]
+    
+# retriever = get_retriever()
+# rag_chain = get_context_aware_rag_chain(retriever)
+
+# # --- 5. UI and Chat Logic ---
+# with st.sidebar:
+#     st.markdown("""
+#     <div style="text-align: center;">
+#         <svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 24 24" fill="none" stroke="#58A6FF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+#             <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+#         </svg>
+#     </div>
+#     """, unsafe_allow_html=True)
+#     st.header("About SentioBot")
+#     st.info("An AI-powered assistant for Nexora Electronics, providing instant support from official documentation.")
+#     st.header("Tech Stack")
+#     st.markdown("- Streamlit\n- LangChain\n- Google Gemini\n- ChromaDB\n- BM25\n- Cohere Reranker")
+
+# st.title("SentioBot: Your Nexora Electronics Expert")
+
+# # Render existing chat history
+# for i, msg in enumerate(st.session_state.chat_history):
+#     is_user = isinstance(msg, HumanMessage)
+#     message(msg.content, is_user=is_user, key=f"msg_{i}", avatar_style="adventurer-neutral" if is_user else "bottts")
+#     if not is_user and msg.additional_kwargs.get("sources"):
+#         with st.expander("View Sources"):
+#             for source in msg.additional_kwargs["sources"]:
+#                 st.info(f"Source: {source.metadata.get('source', 'N/A')} | Section: {source.metadata.get('section_title', 'N/A')}")
+
+# # Stable, non-streaming logic
+# if user_query := st.chat_input("Ask me about Nexora products..."):
+#     st.session_state.chat_history.append(HumanMessage(content=user_query))
+#     message(user_query, is_user=True, key=f"msg_{len(st.session_state.chat_history)}", avatar_style="adventurer-neutral")
+
+#     with st.spinner("Thinking..."):
+#         try:
+#             response = rag_chain.invoke({"input": user_query, "chat_history": st.session_state.chat_history})
+#             raw_answer = response.get("answer", "I couldn't find an answer.")
+            
+#             # FIX: Clean the response before displaying it.
+#             final_answer = format_response(raw_answer)
+            
+#             sources = response.get("context", [])
+#             ai_message = AIMessage(content=final_answer, additional_kwargs={"sources": sources})
+#             st.session_state.chat_history.append(ai_message)
+#             st.rerun()
+
+#         except Exception as e:
+#             error_msg = f"Sorry, I encountered an error: {str(e)}. Please try again or contact support."
+#             st.session_state.chat_history.append(AIMessage(content=error_msg))
+#             st.rerun()
+
+
+
+### DEBUG VERSION OF APP.py
+# app.py - Final Diagnostic Version
+
+import os
+import re
+import pickle
+import logging 
+import streamlit as st
+from langchain_core.messages import HumanMessage, AIMessage
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_chroma import Chroma
+from langchain.chains import create_history_aware_retriever, create_retrieval_chain
+from langchain.chains.combine_documents import create_stuff_documents_chain
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from dotenv import load_dotenv
+from langchain.retrievers import ParentDocumentRetriever
+from langchain_community.retrievers import BM25Retriever
+from langchain.storage import LocalFileStore
+from langchain.storage._lc_store import create_kv_docstore
+from langchain.retrievers.multi_query import MultiQueryRetriever
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.retrievers import EnsembleRetriever
+
+# Set up logging to see the generated queries in the terminal
+logging.basicConfig()
+logging.getLogger("langchain.retrievers.multi_query").setLevel(logging.INFO)
+
+# --- 1. Setup and Configuration ---
+load_dotenv()
+st.set_page_config(page_title="SentioBot | Nexora Support", page_icon="💡", layout="centered")
+
+# --- Avatar URLs and CSS ---
+USER_AVATAR = "https://api.dicebear.com/7.x/adventurer/svg?seed=user"
+ASSISTANT_AVATAR = "https://api.dicebear.com/7.x/bottts/svg?seed=sentiobot&backgroundColor=00ffff"
+
+def load_css():
+    st.markdown("""
+        <style>
+            .stApp { background-color: #0E1117; }
+            [data-testid="stSidebar"] { background-color: #161B22; border-right: 1px solid #30363D; }
+            .stTextInput>div>div>input { background-color: #0D1117; border: 1px solid #30363D; border-radius: 8px; }
+            .stExpander { background-color: #161B22; border-radius: 8px; border: 1px solid #30363D; }
+            .stChatMessage { animation: fadeIn 0.5s; }
+            @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        </style>
+    """, unsafe_allow_html=True)
+
+load_css()
+
+# --- 2. Model and Retriever Initialization ---
+@st.cache_resource(show_spinner="Initializing SentioBot...")
+def get_retriever():
+    embedding_model = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+    
+    db_path = "vector_db"
+    store_path = "parent_docstore"
+    parent_list_path = "parents.pkl"
+
+    if not all(os.path.exists(p) for p in [db_path, store_path, parent_list_path]):
+        st.error("Data stores not found. Please run 'python scripts/ingest.py' first.")
+        st.stop()
+    
+    vectorstore = Chroma(persist_directory=db_path, embedding_function=embedding_model)
+    byte_store = LocalFileStore(store_path)
+    store = create_kv_docstore(byte_store)
+
+    with open(parent_list_path, 'rb') as f:
+        all_parent_docs = pickle.load(f)
+        
+    child_splitter = RecursiveCharacterTextSplitter(chunk_size=300, chunk_overlap=50)
+    
+    parent_retriever = ParentDocumentRetriever(
+        vectorstore=vectorstore, docstore=store,
+        id_key="doc_id", child_splitter=child_splitter
+    )
+    
+    bm25_retriever = BM25Retriever.from_documents(all_parent_docs)
+    bm25_retriever.k = 10
+    
+    ensemble_retriever = EnsembleRetriever(
+        retrievers=[parent_retriever, bm25_retriever], weights=[0.5, 0.5]
+    )
+    
+    llm = get_llm()
+    
+    multiquery_retriever = MultiQueryRetriever.from_llm(
+        retriever=ensemble_retriever, llm=llm
+    )
+    
+    print("✅ Retriever initialized.")
+    return multiquery_retriever
+
+@st.cache_resource(show_spinner=False)
+def get_llm():
+    google_api_key = os.getenv("GOOGLE_API_KEY")
+    if not google_api_key:
+        st.error("Google API key is not set! Please add it to your .env file.")
+        st.stop()
+    return ChatGoogleGenerativeAI(model="gemini-2.5-flash", google_api_key=google_api_key, temperature=0.2)
+
+# --- Formatting Function ---
+def format_response(text: str) -> str:
+    text = text.strip()
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    return text
+
+# --- 3. Chain Definition ---
+def get_context_aware_rag_chain(_retriever):
+    llm = get_llm()
+    contextualize_q_system_prompt = "Given a chat history and the latest user question which might reference context in the chat history, formulate a standalone question which can be understood without the chat history. Do NOT answer the question, just reformulate it if needed and otherwise return it as is."
+    contextualize_q_prompt = ChatPromptTemplate.from_messages(
+        [("system", contextualize_q_system_prompt), MessagesPlaceholder("chat_history"), ("human", "{input}")]
+    )
+    history_aware_retriever = create_history_aware_retriever(llm, _retriever, contextualize_q_prompt)
+    
+    qa_system_prompt = """## Persona and Role
+You are SentioBot, a highly advanced AI customer support assistant for Nexora Electronics. Your persona is professional, precise, and exceptionally helpful.
+## Core Directives
+1.  **Absolute Grounding:** You MUST base your answers exclusively on the information present in the `Provided Context`. Do not use any external knowledge.
+2.  **No Fabrication:** You MUST NOT invent or infer any details, product features, or procedures not explicitly mentioned in the context.
+3.  **Fallback Protocol:** If the answer is not in the context, you MUST state clearly: "I do not have enough information to answer that question. For further assistance, please contact our human support team."
+## Formatting Rules (Strict)
+1.  **Markdown is Mandatory:** You MUST use Markdown for all formatting. Use `##` for main headings and `*` for bullet points. Use `**bold**` for emphasis on key terms.
+2.  **Spacing is Critical:** You MUST follow these spacing rules without deviation:
+    - Use two newlines (`\n\n`) to separate paragraphs or to separate a heading from a paragraph.
+    - Use one newline (`\n`) to separate items in a bulleted list.
+    - **NEVER use more than two consecutive newlines.** Your output must be compact and clean.
+## Example of Perfect Execution (Few-Shot Example)
+---
+**User Question:** How do I connect my new thermostat to my Wi-Fi?
+**Provided Context:**
+Section: Wi-Fi Setup
+To connect the Nexora Thermostat Pro, first ensure Bluetooth is enabled on your smartphone. Open the Nexora Home app and tap 'Add Device'. The app will scan for the thermostat. Once found, select it and you will be prompted to enter your Wi-Fi network's password. The device supports 2.4GHz networks only.
+**Your Perfect Response:**
+I can certainly help you connect your Nexora Thermostat Pro to Wi-Fi.
+## Wi-Fi Connection Steps
+Please follow these steps using the Nexora Home app on your smartphone:
+* **Enable Bluetooth:** Make sure Bluetooth is turned on on your smartphone before you begin.
+* **Add Device:** In the app, tap the 'Add Device' button. The app will automatically start scanning for your thermostat.
+* **Select and Connect:** Once your thermostat appears in the app, select it and enter your Wi-Fi password when prompted.
+**Important Note:** Please ensure you are connecting to a **2.4GHz Wi-Fi network**, as the Thermostat Pro does not support 5GHz networks.
+---
+Begin!
+Context:
+{context}"""
+    qa_prompt = ChatPromptTemplate.from_messages(
+        [("system", qa_system_prompt), MessagesPlaceholder("chat_history"), ("human", "{input}")]
+    )
+    question_answer_chain = create_stuff_documents_chain(llm, qa_prompt)
+    rag_chain = create_retrieval_chain(history_aware_retriever, question_answer_chain)
+    return rag_chain
+
+# --- 4. Main Application Logic ---
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = [AIMessage(content="Hello! I am SentioBot. How can I assist you with your Nexora devices today?")]
+    
+retriever = get_retriever()
+rag_chain = get_context_aware_rag_chain(retriever)
+
+# --- 5. UI and Chat Logic ---
+with st.sidebar:
+    st.markdown("""
+    <div style="text-align: center;">
+        <svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 24" fill="none" stroke="#58A6FF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+        </svg>
+    </div>
+    """, unsafe_allow_html=True)
+    st.header("About SentioBot")
+    st.info("An AI-powered assistant for Nexora Electronics, providing instant support from official documentation.")
+    st.header("Tech Stack")
+    st.markdown("- Streamlit\n- LangChain\n- Google Gemini\n- ChromaDB\n- BM25\n- Cohere Reranker")
+
+st.title("SentioBot: Your Nexora Electronics Expert")
+
+for msg in st.session_state.chat_history:
+    if isinstance(msg, AIMessage):
+        with st.chat_message("assistant", avatar=ASSISTANT_AVATAR):
+            st.markdown(msg.content)
+            if sources := msg.additional_kwargs.get("sources"):
+                with st.expander("View Sources"):
+                    for source in sources:
+                        st.info(f"Source: {source.metadata.get('source', 'N/A')} | Section: {source.metadata.get('section_title', 'N/A')}")
+    elif isinstance(msg, HumanMessage):
+        with st.chat_message("user", avatar=USER_AVATAR):
+            st.markdown(msg.content)
+
+if user_query := st.chat_input("Ask me about Nexora products..."):
+    st.session_state.chat_history.append(HumanMessage(content=user_query))
+    with st.spinner("Thinking..."):
+        try:
+            # <<< FINAL DEBUGGING: See what the history-aware retriever is doing >>>
+            # We are manually running the first part of the RAG chain to inspect its output.
+            print("\n" + "="*50)
+            print("DEBUG: Inspecting the History-Aware Retriever...")
+            
+            # The 'rag_chain' object is a sequence. 'first' is the history_aware_retriever part.
+            history_aware_retriever_chain = rag_chain.first
+            
+            # We invoke it with the current input to see what question it generates for the search
+            rephrased_result = history_aware_retriever_chain.invoke({
+                "input": user_query,
+                "chat_history": st.session_state.chat_history[:-1] # Pass history *before* the new question
+            })
+            
+            print(f"  - Original User Query: '{user_query}'")
+            # The result could be a string or a Document, so we handle both cases
+            if isinstance(rephrased_result, str):
+                print(f"  - Re-phrased Query for Search: '{rephrased_result}'")
+            else:
+                 print(f"  - Re-phrased Query for Search (Unexpected Type): '{rephrased_result}'")
+            
+            print("="*50 + "\n")
+            # <<< END OF DEBUGGING BLOCK >>>
+
+            # The original chain runs as normal
+            response = rag_chain.invoke({"input": user_query, "chat_history": st.session_state.chat_history})
+            raw_answer = response.get("answer", "I do not have enough information to answer.")
+            final_answer = format_response(raw_answer)
+            sources = response.get("context", [])
+            ai_message = AIMessage(content=final_answer, additional_kwargs={"sources": sources})
+            st.session_state.chat_history.append(ai_message)
+            st.rerun()
+
+        except Exception as e:
+            error_msg = f"Sorry, I encountered an error: {str(e)}. Please try again or contact support."
+            st.session_state.chat_history.append(AIMessage(content=error_msg))
+            st.rerun()
+
+# # scripts/ingest.py - Creates ALL persistent stores (Corrected Version)
+
+# import os
+# import shutil
+# import re
+# import uuid
+# import pickle 
+# from langchain.storage import LocalFileStore 
+# from langchain.storage._lc_store import create_kv_docstore
+# from langchain.docstore.document import Document
+# from langchain_community.document_loaders import CSVLoader
+# from langchain_chroma import Chroma
+# from langchain_huggingface import HuggingFaceEmbeddings
+# from langchain.text_splitter import RecursiveCharacterTextSplitter
+
+# # --- Constants ---
+# PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
+# DATA_PATH = os.path.join(PROJECT_ROOT, "data")
+# DB_PATH = os.path.join(PROJECT_ROOT, "vector_db")
+# PARENT_STORE_PATH = os.path.join(PROJECT_ROOT, "parent_docstore") 
+# PARENT_LIST_PATH = os.path.join(PROJECT_ROOT, "parents.pkl")
+
+# # Create a consistent namespace for our deterministic UUIDs
+# NAMESPACE_UUID = uuid.UUID('6ba7b810-9dad-11d1-80b4-00c04fd430c8')
+
+# embedding_model = HuggingFaceEmbeddings(
+#     model_name="all-MiniLM-L6-v2", model_kwargs={'device': 'cpu'}
+# )
+
+# def process_markdown_semantically(content: str, filename: str) -> tuple[list[Document], list[Document]]:
+#     """
+#     Splits a markdown file into parent and child documents based on ## and ### headers.
+#     """
+#     parent_documents = []
+#     child_documents = []
+#     sections = re.split(r'\n(?=## )', content)
+#     doc_intro_content = sections[0].strip()
+#     if doc_intro_content:
+#         main_title = doc_intro_content.split('\n', 1)[0].replace('# ', '').strip()
+#         doc_id = str(uuid.uuid5(NAMESPACE_UUID, f"{filename}-{main_title}"))
+#         parent_doc = Document(
+#             page_content=doc_intro_content,
+#             metadata={"source": filename, "section_title": main_title, "doc_id": doc_id}
+#         )
+#         parent_documents.append(parent_doc)
+#         child_documents.append(parent_doc.model_copy(deep=True))
+#     for section_content in sections[1:]:
+#         if not section_content.strip():
+#             continue
+#         lines = section_content.strip().split('\n')
+#         main_title = lines[0].replace('## ', '').strip()
+#         doc_id = str(uuid.uuid5(NAMESPACE_UUID, f"{filename}-{main_title}"))
+#         parent_doc = Document(
+#             page_content=section_content.strip(),
+#             metadata={"source": filename, "section_title": main_title, "doc_id": doc_id}
+#         )
+#         parent_documents.append(parent_doc)
+#         subsections = re.split(r'\n(?=### )', section_content)
+#         section_intro = subsections[0].strip()
+#         child_overview = Document(
+#             page_content=section_intro,
+#             metadata={
+#                 "source": filename, "section_title": main_title,
+#                 "subsection_title": "Overview", "doc_id": doc_id
+#             }
+#         )
+#         child_documents.append(child_overview)
+#         for subsection_content in subsections[1:]:
+#             sub_lines = subsection_content.strip().split('\n')
+#             sub_title = sub_lines[0].replace('### ', '').strip()
+#             child_doc = Document(
+#                 page_content=subsection_content.strip(),
+#                 metadata={
+#                     "source": filename, "section_title": main_title,
+#                     "subsection_title": sub_title, "doc_id": doc_id
+#                 }
+#             )
+#             child_documents.append(child_doc)
+#     return parent_documents, child_documents
+
+# def load_and_process_documents():
+#     """
+#     Loads all documents from the data directory, applying the best processing strategy based on file type.
+#     """
+#     all_parents = []
+#     all_children = []
+    
+#     for root, _, files in os.walk(DATA_PATH):
+#         for filename in files:
+#             filepath = os.path.join(root, filename)
+#             if filename.endswith(".md"):
+#                 with open(filepath, 'r', encoding='utf-8') as f:
+#                     content = f.read()
+                
+#                 parents, children = process_markdown_semantically(content, filename)
+#                 all_parents.extend(parents)
+                
+#                 # <<< FIX: The overly aggressive safety check has been removed.
+#                 # We now add the semantic children directly.
+#                 all_children.extend(children)
+                
+#                 print(f"Processed Markdown '{filename}' into {len(parents)} parents and {len(children)} semantic children.")
+
+#             elif filename.endswith(".csv"):
+#                 faq_loader = CSVLoader(file_path=filepath, source_column="Question", metadata_columns=["Category"])
+#                 faq_docs = faq_loader.load()
+                
+#                 for doc in faq_docs:
+#                     question_content = doc.page_content
+#                     doc_id = str(uuid.uuid5(NAMESPACE_UUID, f"{filename}-{question_content[:50]}"))
+#                     doc.metadata["doc_id"] = doc_id
+#                     doc.metadata["source"] = filename
+#                     all_parents.append(doc)
+#                     all_children.append(doc.model_copy(deep=True))
+#                 print(f"Loaded and processed {len(faq_docs)} FAQs from '{filename}'.")
+                
+#     if not all_parents or not all_children:
+#         print("Warning: No documents generated. Check your data files.")
+#     return all_parents, all_children
+
+# def main():
+#     """The main data ingestion pipeline."""
+#     print("🚀 Starting robust data ingestion process with TRUE semantic chunking...")
+#     all_parents, all_children = load_and_process_documents()
+    
+#     # --- Clear old stores ---
+#     if os.path.exists(DB_PATH):
+#         print(f"Clearing existing vector database at {DB_PATH}")
+#         shutil.rmtree(DB_PATH)
+#     if os.path.exists(PARENT_STORE_PATH):
+#         print(f"Clearing existing parent docstore at {PARENT_STORE_PATH}")
+#         shutil.rmtree(PARENT_STORE_PATH)
+#     if os.path.exists(PARENT_LIST_PATH):
+#         os.remove(PARENT_LIST_PATH)
+
+#     # --- Create and persist child chunks in ChromaDB ---
+#     if all_children:
+#         print(f"\nCreating vector store with {len(all_children)} child chunks...")
+#         vector_store = Chroma.from_documents(
+#             documents=all_children,
+#             embedding=embedding_model,
+#             persist_directory=DB_PATH
+#         )
+#         print(f"✅ Vector store created successfully.")
+#     else:
+#         print("❌ No child chunks to add to the vector store.")
+
+#     # --- Create and persist parent documents ---
+#     if all_parents:
+#         print(f"\nCreating persistent parent docstore with {len(all_parents)} documents...")
+#         byte_store = LocalFileStore(PARENT_STORE_PATH)
+#         store = create_kv_docstore(byte_store)
+        
+#         parent_id_map = {doc.metadata["doc_id"]: doc for doc in all_parents}
+#         store.mset(list(parent_id_map.items()))
+#         print(f"✅ Parent docstore created successfully.")
+        
+#         # --- Save the parent list for the BM25 retriever ---
+#         print(f"Saving parent document list for BM25 retriever...")
+#         with open(PARENT_LIST_PATH, 'wb') as f:
+#             pickle.dump(all_parents, f)
+#         print(f"✅ Parent list saved to {PARENT_LIST_PATH}.")
+#     else:
+#         print("❌ No parent documents to add to the docstore.")
+
+# if __name__ == "__main__":
+#     main()
+
+
+# working verison without citations 
+# # app.py - Final Production Version
+
+# import os
+# import re
+# import pickle
+# import logging 
+# import streamlit as st
+# from langchain_core.messages import HumanMessage, AIMessage
+# from langchain_google_genai import ChatGoogleGenerativeAI
+# from langchain_huggingface import HuggingFaceEmbeddings
+# from langchain_chroma import Chroma
+# from langchain.chains import create_history_aware_retriever, create_retrieval_chain
+# from langchain.chains.combine_documents import create_stuff_documents_chain
+# from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+# from dotenv import load_dotenv
+# from langchain.retrievers import ParentDocumentRetriever
+# from langchain_community.retrievers import BM25Retriever
+# from langchain.storage import LocalFileStore
+# from langchain.storage._lc_store import create_kv_docstore
+# from langchain.retrievers.multi_query import MultiQueryRetriever
+# from langchain.text_splitter import RecursiveCharacterTextSplitter
+# from langchain.retrievers import EnsembleRetriever
+
+# # Set up logging to see the generated queries in the terminal (optional but helpful)
+# logging.basicConfig()
+# logging.getLogger("langchain.retrievers.multi_query").setLevel(logging.INFO)
+
+# # --- 1. Setup and Configuration ---
+# load_dotenv()
+# st.set_page_config(page_title="SentioBot | Nexora Support", page_icon="💡", layout="centered")
+
+# # --- Avatar URLs and CSS ---
+# USER_AVATAR = "https://api.dicebear.com/7.x/adventurer/svg?seed=user"
+# ASSISTANT_AVATAR = "https://api.dicebear.com/7.x/bottts/svg?seed=sentiobot&backgroundColor=00ffff"
+# def load_css():
+#     st.markdown("""
+#         <style>
+#             .stApp { background-color: #0E1117; }
+#             [data-testid="stSidebar"] { background-color: #161B22; border-right: 1px solid #30363D; }
+#             .stTextInput>div>div>input { background-color: #0D1117; border: 1px solid #30363D; border-radius: 8px; }
+#             .stExpander { background-color: #161B22; border-radius: 8px; border: 1px solid #30363D; }
+#             .stChatMessage { animation: fadeIn 0.5s; }
+#             @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+#         </style>
+#     """, unsafe_allow_html=True)
+# load_css()
+
+# # --- 2. Model and Retriever Initialization ---
+# @st.cache_resource(show_spinner="Initializing SentioBot...")
+# def get_retriever():
+#     embedding_model = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+    
+#     db_path = "vector_db"
+#     store_path = "parent_docstore"
+#     parent_list_path = "parents.pkl"
+
+#     if not all(os.path.exists(p) for p in [db_path, store_path, parent_list_path]):
+#         st.error("Data stores not found. Please run 'python scripts/ingest.py' first.")
+#         st.stop()
+    
+#     vectorstore = Chroma(persist_directory=db_path, embedding_function=embedding_model)
+#     byte_store = LocalFileStore(store_path)
+#     store = create_kv_docstore(byte_store)
+
+#     with open(parent_list_path, 'rb') as f:
+#         all_parent_docs = pickle.load(f)
+        
+#     child_splitter = RecursiveCharacterTextSplitter(chunk_size=300, chunk_overlap=50)
+    
+#     parent_retriever = ParentDocumentRetriever(
+#         vectorstore=vectorstore, docstore=store,
+#         id_key="doc_id", child_splitter=child_splitter
+#     )
+    
+#     bm25_retriever = BM25Retriever.from_documents(all_parent_docs)
+#     bm25_retriever.k = 10
+    
+#     ensemble_retriever = EnsembleRetriever(
+#         retrievers=[parent_retriever, bm25_retriever], weights=[0.5, 0.5]
+#     )
+    
+#     llm = get_llm()
+    
+#     multiquery_retriever = MultiQueryRetriever.from_llm(
+#         retriever=ensemble_retriever, llm=llm
+#     )
+    
+#     print("✅ Retriever initialized.")
+#     return multiquery_retriever
+
+# @st.cache_resource(show_spinner=False)
+# def get_llm():
+#     google_api_key = os.getenv("GOOGLE_API_KEY")
+#     if not google_api_key:
+#         st.error("Google API key is not set! Please add it to your .env file.")
+#         st.stop()
+#     return ChatGoogleGenerativeAI(model="gemini-2.5-flash", google_api_key=google_api_key, temperature=0.2)
+
+# # --- Formatting Function ---
+# def format_response(text: str) -> str:
+#     text = text.strip()
+#     text = re.sub(r'\n{3,}', '\n\n', text)
+#     return text
+
+# # --- 3. Chain Definition ---
+# def get_context_aware_rag_chain(_retriever):
+#     llm = get_llm()
+#     contextualize_q_system_prompt = "Given a chat history and the latest user question which might reference context in the chat history, formulate a standalone question which can be understood without the chat history. Do NOT answer the question, just reformulate it if needed and otherwise return it as is."
+#     contextualize_q_prompt = ChatPromptTemplate.from_messages(
+#         [("system", contextualize_q_system_prompt), MessagesPlaceholder("chat_history"), ("human", "{input}")]
+#     )
+#     history_aware_retriever = create_history_aware_retriever(llm, _retriever, contextualize_q_prompt)
+    
+#     qa_system_prompt = """## Persona and Role
+# You are SentioBot, a highly advanced AI customer support assistant for Nexora Electronics. Your persona is professional, precise, and exceptionally helpful.
+# ## Core Directives
+# 1.  **Absolute Grounding:** You MUST base your answers exclusively on the information present in the `Provided Context`. Do not use any external knowledge.
+# 2.  **No Fabrication:** You MUST NOT invent or infer any details, product features, or procedures not explicitly mentioned in the context.
+# 3.  **Fallback Protocol:** If the answer is not in the context, you MUST state clearly: "I do not have enough information to answer that question. For further assistance, please contact our human support team."
+# ## Formatting Rules (Strict)
+# 1.  **Markdown is Mandatory:** You MUST use Markdown for all formatting. Use `##` for main headings and `*` for bullet points. Use `**bold**` for emphasis on key terms.
+# 2.  **Spacing is Critical:** You MUST follow these spacing rules without deviation:
+#     - Use two newlines (`\n\n`) to separate paragraphs or to separate a heading from a paragraph.
+#     - Use one newline (`\n`) to separate items in a bulleted list.
+#     - **NEVER use more than two consecutive newlines.** Your output must be compact and clean.
+# ## Example of Perfect Execution (Few-Shot Example)
+# ---
+# **User Question:** How do I connect my new thermostat to my Wi-Fi?
+# **Provided Context:**
+# Section: Wi-Fi Setup
+# To connect the Nexora Thermostat Pro, first ensure Bluetooth is enabled on your smartphone. Open the Nexora Home app and tap 'Add Device'. The app will scan for the thermostat. Once found, select it and you will be prompted to enter your Wi-Fi network's password. The device supports 2.4GHz networks only.
+# **Your Perfect Response:**
+# I can certainly help you connect your Nexora Thermostat Pro to Wi-Fi.
+# ## Wi-Fi Connection Steps
+# Please follow these steps using the Nexora Home app on your smartphone:
+# * **Enable Bluetooth:** Make sure Bluetooth is turned on on your smartphone before you begin.
+# * **Add Device:** In the app, tap the 'Add Device' button. The app will automatically start scanning for your thermostat.
+# * **Select and Connect:** Once your thermostat appears in the app, select it and enter your Wi-Fi password when prompted.
+# **Important Note:** Please ensure you are connecting to a **2.4GHz Wi-Fi network**, as the Thermostat Pro does not support 5GHz networks.
+# ---
+# Begin!
+# Context:
+# {context}"""
+#     qa_prompt = ChatPromptTemplate.from_messages(
+#         [("system", qa_system_prompt), MessagesPlaceholder("chat_history"), ("human", "{input}")]
+#     )
+#     question_answer_chain = create_stuff_documents_chain(llm, qa_prompt)
+#     rag_chain = create_retrieval_chain(history_aware_retriever, question_answer_chain)
+#     return rag_chain
+
+# # --- 4. Main Application Logic ---
+# if "chat_history" not in st.session_state:
+#     st.session_state.chat_history = [AIMessage(content="Hello! I am SentioBot. How can I assist you with your Nexora devices today?")]
+    
+# retriever = get_retriever()
+# rag_chain = get_context_aware_rag_chain(retriever)
+
+# # --- 5. UI and Chat Logic ---
+# with st.sidebar:
+#     st.markdown("""
+#     <div style="text-align: center;">
+#         <svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 24" fill="none" stroke="#58A6FF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+#             <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+#         </svg>
+#     </div>
+#     """, unsafe_allow_html=True)
+#     st.header("About SentioBot")
+#     st.info("An AI-powered assistant for Nexora Electronics, providing instant support from official documentation.")
+#     st.header("Tech Stack")
+#     st.markdown("- Streamlit\n- LangChain\n- Google Gemini\n- ChromaDB\n- BM25")
+
+# st.title("SentioBot: Your Nexora Electronics Expert")
+
+# for msg in st.session_state.chat_history:
+#     if isinstance(msg, AIMessage):
+#         with st.chat_message("assistant", avatar=ASSISTANT_AVATAR):
+#             st.markdown(msg.content)
+#             if sources := msg.additional_kwargs.get("sources"):
+#                 with st.expander("View Sources"):
+#                     for source in sources:
+#                         st.info(f"Source: {source.metadata.get('source', 'N/A')} | Section: {source.metadata.get('section_title', 'N/A')}")
+#     elif isinstance(msg, HumanMessage):
+#         with st.chat_message("user", avatar=USER_AVATAR):
+#             st.markdown(msg.content)
+
+# if user_query := st.chat_input("Ask me about Nexora products..."):
+#     st.session_state.chat_history.append(HumanMessage(content=user_query))
+#     with st.spinner("Thinking..."):
+#         try:
+#             response = rag_chain.invoke({"input": user_query, "chat_history": st.session_state.chat_history})
+#             raw_answer = response.get("answer", "I do not have enough information to answer.")
+#             final_answer = format_response(raw_answer)
+#             sources = response.get("context", [])
+#             ai_message = AIMessage(content=final_answer, additional_kwargs={"sources": sources})
+#             st.session_state.chat_history.append(ai_message)
+#             st.rerun()
+#         except Exception as e:
+#             error_msg = f"Sorry, I encountered an error: {str(e)}. Please try again or contact support."
+#             st.session_state.chat_history.append(AIMessage(content=error_msg))
+#             st.rerun()
+            
+            
+####### WORKING AGENT - THUMBS UP & DOWN, USER FEEDBACK, PERSONALIZED USER EXPERIENCE
+# app.py
+import os
+import re
+import pickle
+import logging
+import json
+from datetime import datetime, timedelta
+from typing import List, Dict, Any
+import streamlit as st
+from langchain_core.messages import HumanMessage, AIMessage
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_chroma import Chroma
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder, PromptTemplate
+from dotenv import load_dotenv
+from langchain_community.retrievers import BM25Retriever
+from langchain.storage import LocalFileStore
+from langchain.storage._lc_store import create_kv_docstore
+from langchain.retrievers.multi_query import MultiQueryRetriever
+from pydantic import BaseModel, Field
+from langchain_core.runnables import RunnablePassthrough, RunnableLambda
+from langchain.docstore.document import Document
+from langchain.tools import tool 
+from langchain.agents import AgentExecutor, create_react_agent
+from tools import check_order_status, check_warranty_status, create_support_ticket
+from langchain.retrievers import EnsembleRetriever
+from langchain import hub
+from langchain.memory import ConversationBufferWindowMemory
+from langchain_community.chat_message_histories import ChatMessageHistory
+
+# --- NEW: Import mock user database ---
+from mock_db import USERS
+
+# Set up logging to see the generated queries in the terminal (optional but helpful)
+logging.basicConfig()
+logging.getLogger("langchain.retrievers.multi_query").setLevel(logging.INFO)
+
+# --- 1. Setup and Configuration ---
+load_dotenv()
+st.set_page_config(page_title="SentioBot | Nexora Support", page_icon="💡", layout="centered")
+LOG_FILE = "analytics.log"
+
+# --- Avatar URLs and CSS ---
+USER_AVATAR = "https://api.dicebear.com/7.x/adventurer/svg?seed=user"
+ASSISTANT_AVATAR = "https://api.dicebear.com/7.x/bottts/svg?seed=sentiobot&backgroundColor=00ffff"
+def load_css():
+    st.markdown("""
+        <style>
+            .stApp { background-color: #0E1117; }
+            [data-testid="stSidebar"] { background-color: #161B22; border-right: 1px solid #30363D; }
+            .stTextInput>div>div>input { background-color: #0D1117; border: 1px solid #30363D; border-radius: 8px; }
+            .stExpander { background-color: #161B22; border-radius: 8px; border: 1px solid #30363D; }
+            .stChatMessage { animation: fadeIn 0.5s; }
+            @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; translateY(0); } }
+            /* Style for feedback buttons */
+            div[data-testid="stHorizontalBlock"] > div {
+                display: flex;
+                justify-content: flex-end;
+                gap: 5px;
+                padding-top: 10px;
+            }
+            div[data-testid="stHorizontalBlock"] > div > button {
+                background-color: #161B22;
+                border: 1px solid #30363D;
+                border-radius: 5px;
+                width: 40px;
+                height: 40px;
+            }
+        </style>
+    """, unsafe_allow_html=True)
+load_css()
+
+# --- NEW: Analytics Logging Function ---
+def log_interaction(log_data: Dict[str, Any]):
+    """Appends a dictionary of interaction data to the log file."""
+    with open(LOG_FILE, "a", encoding="utf-8") as f:
+        f.write(json.dumps(log_data) + "\n")
+
+# --- Pydantic schemas for structured citation output ---
+class Citation(BaseModel):
+    source_id: int = Field(description="The integer index of the source document that supports the claim, starting from 1.")
+    claim: str = Field(description="The specific claim or statement from the answer that is directly supported by this source.")
+
+class AnswerWithCitations(BaseModel):
+    answer: str = Field(description="The final answer to the user's question, written in Markdown.")
+    citations: List[Citation] = Field(description="A list of all claims and their corresponding source document IDs.")
+
+# --- 2. Model and Retriever Initialization ---
+@st.cache_resource(show_spinner="Initializing SentioBot...")
+def get_retriever():
+    embedding_model = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+    db_path, store_path, parent_list_path = "vector_db", "parent_docstore", "parents.pkl"
+    if not all(os.path.exists(p) for p in [db_path, store_path, parent_list_path]):
+        st.error("Data stores not found. Please run 'python scripts/ingest.py' first.")
+        st.stop()
+    vectorstore = Chroma(persist_directory=db_path, embedding_function=embedding_model)
+    byte_store = LocalFileStore(store_path)
+    store = create_kv_docstore(byte_store)
+    with open(parent_list_path, 'rb') as f:
+        all_parent_docs = pickle.load(f)
+
+    # Note: We are not using ParentDocumentRetriever directly in the agent,
+    # but keeping the setup here in case you want to switch back or test.
+    # The multiquery retriever is what we will pass to the agent.
+    bm25_retriever = BM25Retriever.from_documents(all_parent_docs)
+    chroma_retriever = vectorstore.as_retriever(search_kwargs={"k": 5})
+    
+    ensemble_retriever = EnsembleRetriever(
+        retrievers=[bm25_retriever, chroma_retriever],
+        weights=[0.5, 0.5]
+    )
+
+    template = """You are an AI language model assistant. Your task is to generate 3
+    different versions of the given user question to retrieve relevant documents from a vector
+    database. By generating multiple perspectives on the user question, your goal is to help
+    the user overcome some of the limitations of distance-based similarity search.
+    Provide these alternative questions separated by newlines.
+    Original question: {question}"""
+    prompt_perspectives = PromptTemplate.from_template(template)
+
+    llm = get_llm()
+    multiquery_retriever = MultiQueryRetriever.from_llm(
+        retriever=ensemble_retriever, 
+        llm=llm,
+        prompt=prompt_perspectives
+    )
+    print("✅ Retriever initialized.")
+    return multiquery_retriever
+
+@st.cache_resource(show_spinner=False)
+def get_llm():
+    google_api_key = os.getenv("GOOGLE_API_KEY")
+    if not google_api_key:
+        st.error("Google API key is not set! Please add it to your .env file.")
+        st.stop()
+    return ChatGoogleGenerativeAI(model="gemini-2.5-flash", google_api_key=google_api_key, temperature=0.1)
+
+# --- Formatting Functions ---
+def format_answer_with_citations(response_obj: AnswerWithCitations, sources: list) -> str:
+    formatted_answer = response_obj.answer
+    cited_source_ids = sorted(list(set(c.source_id for c in response_obj.citations)))
+    citation_markers = "".join(f" [{i+1}]" for i in range(len(cited_source_ids)))
+    if citation_markers:
+        formatted_answer += f" {citation_markers}"
+
+    citation_references = []
+    for i, source_id in enumerate(cited_source_ids):
+        if 1 <= source_id <= len(sources):
+            source_doc = sources[source_id - 1]
+            source_name = source_doc.metadata.get('source', 'N/A')
+            section_name = source_doc.metadata.get('section_title', 'N/A')
+            citation_references.append(f"[{i+1}] {source_name} | Section: {section_name}")
+
+    if citation_references:
+        formatted_answer += "\n\n---\n**Sources:**\n" + "\n".join(citation_references)
+    return formatted_answer
+
+def format_docs_with_ids(docs: List[Document]) -> str:
+    return "\n\n".join(f"---\nSource ID: {i+1}\nContent: {doc.page_content}\n---" for i, doc in enumerate(docs))
+
+# --- 3. Agent and Tools Definition ---
+@st.cache_resource(show_spinner="Initializing Agent...")
+def get_agent_executor(_retriever):
+    """Creates the Agent with all its tools, including the RAG chain."""
+    llm = get_llm()
+    retrieved_docs_for_logging = []
+
+    @tool
+    def lookup_documentation(query: str) -> str:
+        """
+        Use this tool to answer general questions about Nexora products, policies,
+        troubleshooting guides, and technical specifications. It searches the
+        official documentation. Use this for any question that does not involve
+        a specific order ID, serial number, or a request for a human.
+        """
+        nonlocal retrieved_docs_for_logging
+
+        if not query or query.strip() == "":
+            return "I cannot look up documentation without a specific question. Please provide more details."
+
+        # New detailed log for the RAG tool
+        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        print("\n" + "="*60)
+        print(f"[{timestamp}] Executing Tool: lookup_documentation")
+        print("-"*60)
+        print(f"INPUT QUERY: {query}")
+
+        structured_llm_rag = llm.with_structured_output(AnswerWithCitations)
+        
+        qa_system_prompt = """## Persona and Role
+You are SentioBot, a highly advanced AI customer support assistant for Nexora Electronics. Your persona is professional, precise, and exceptionally helpful.
+## Core Directives
+1.  **Analyze the `Provided Context`:** The context contains several source documents. Each document is clearly marked with a `Source ID` (e.g., `Source ID: 1`).
+2.  **Generate a Comprehensive Answer:** Synthesize the information from the provided documents to answer the user's `Question`.
+3.  **Cite Your Sources:** For every factual claim or specific piece of information in your answer, you MUST identify which `Source ID` it came from.
+4.  **Format the Output:** You MUST format your entire output as a single, valid JSON object that strictly follows the provided `AnswerWithCitations` schema. Do not add any text or formatting outside of this JSON object.
+5.  **Use Markdown:** The text within the `answer` field of your JSON output MUST be formatted using Markdown. Use `##` for headings, `*` for bullet points, and `**bold**` for emphasis on key terms.
+
+## `Provided Context` Example
+---
+Source ID: 1
+Content: The Nexora Thermostat Pro has a 2-year warranty.
+---
+---
+Source ID: 2
+Content: To reset the LumiGlow bulb, turn it on and off 5 times.
+---
+## `Question` Example
+"What is the warranty on the thermostat and how do I reset the light?"
+## Perfect Output Example (Must be a single JSON object)
+{{
+  "answer": "The Nexora Thermostat Pro comes with a **2-year warranty**. To reset the LumiGlow bulb, you need to turn it on and off five times in a row.",
+  "citations": [
+    {{
+      "source_id": 1,
+      "claim": "The Nexora Thermostat Pro comes with a 2-year warranty."
+    }},
+    {{
+      "source_id": 2,
+      "claim": "To reset the LumiGlow bulb, you need to turn it on and off five times in a row."
+    }}
+  ]
+}}
+---
+Begin!
+
+`Provided Context`:
+{context}
+
+`Question`:
+{input}"""
+        qa_prompt = ChatPromptTemplate.from_messages([
+            ("system", qa_system_prompt), 
+            # MessagesPlaceholder(variable_name="chat_history"), 
+            ("human", "{input}")
+        ])
+        docs = _retriever.invoke(query)
+
+        retrieved_docs_for_logging = [
+            {"source": d.metadata.get('source', 'N/A'), "section": d.metadata.get('section_title', 'N/A')}
+            for d in docs
+        ]
+
+        if not docs:
+            return "No relevant information was found in the documentation for this query."
+        
+        # New detailed log of retrieved documents
+        retrieved_sources = [f"{doc.metadata.get('source', 'N/A')} | Section: {doc.metadata.get('section_title', 'N/A')}" for doc in docs]
+        print("\nRETRIEVED CONTEXT:")
+        print(json.dumps(retrieved_sources, indent=2))
+        print("="*60 + "\n")
+
+        rag_chain = (
+            {
+                "context": lambda x: format_docs_with_ids(x["context"]),
+                "input": lambda x: x["input"],
+                # "chat_history": lambda x: x["chat_history"], # We guarantee it's here
+            }
+            | qa_prompt
+            | structured_llm_rag
+        )
+        response = rag_chain.invoke({
+            "context": docs, 
+            "input": query, 
+            # "chat_history": []
+        })
+        if isinstance(response, AnswerWithCitations):
+            return format_answer_with_citations(response, docs)
+        return "I found some information in the documentation, but couldn't structure it correctly."
+
+    tools = [
+        lookup_documentation,
+        check_order_status,
+        check_warranty_status,
+        create_support_ticket
+    ]
+    
+    # FIX 2: Pull the official, compatible prompt from LangChain Hub
+    # Pull the base prompt
+    prompt = hub.pull("hwchase17/react-chat")
+    
+    # THIS IS THE FINAL, UPGRADED PROMPT WITH BETTER JUDGMENT
+    # A REFINED, MORE RELIABLE PROMPT STRUCTURE
+
+    new_prompt_template = """## Persona & Objective
+You are SentioBot, a helpful and precise AI support agent for Nexora Electronics. Your primary objective is to resolve user issues by using tools, recalling conversation history, and strictly following all rules.
+When you receive the user's input, it may contain a special section with their profile information (like products they own). You MUST use this information to provide more relevant, personalized answers. For example, if they own a product, prioritize troubleshooting for that specific product.
+
+---
+
+## Rules of Engagement
+1.  **Check History First (Memory):** Before doing anything else, check the `chat_history`. If the user has already provided information (like a serial number or order ID), you MUST reuse it. Do not ask for it again.
+2.  **Stop if Information is Missing:** If a tool requires specific information that you don't have (and it's not in the history), your ONLY action is to stop and ask the user for it. **Never** call a tool with placeholder information.
+3.  **Be Proactive:** After a successful tool use, think about the next logical step to help the user. For example, if a warranty is active, find the claim process.
+4.  **Synthesize Answers:** When you have all the necessary information (often from multiple tools), combine it into a single, comprehensive, and helpful final answer.
+5.  **Handle Failures:** If `lookup_documentation` yields no relevant results, state that you couldn't find the information and ask the user if they'd like a support ticket created.
+6.  **Offer the Next Action:** After successfully providing information (like the warranty claim process), if you have a tool that can perform the next logical step (like `create_support_ticket`), you MUST offer to use it.
+
+---
+
+## Tool Usage Protocol
+* **`lookup_documentation`:** Use this FIRST for all questions about policies, product features, or troubleshooting.
+* **`check_warranty_status` / `check_order_status`:** Use these ONLY when you have a specific serial number or order ID from the user or chat history.
+* **`create_support_ticket`:** Use this as a LAST RESORT, either when documentation fails or when the user explicitly asks for a human agent.
+
+---
+
+## CRITICAL: ReAct Framework Syntax
+You MUST follow this output format. Every turn must end with either `Action` or `Final Answer`.
+
+### When to use `Action`:
+Use `Action` when you need to run a tool to get more information.
+
+Thought: I need to check the warranty. I have the serial number from the chat history. I should use the `check_warranty_status` tool.
+Action: check_warranty_status
+Action Input: SN-NTS-PRO-ABC123
+
+### When to use `Final Answer`:
+Use `Final Answer` for two scenarios:
+1.  You have all the information needed and can directly answer the user.
+2.  You need more information FROM THE USER and must ask them a question.
+
+Thought: I have looked up the policy and see that I need a serial number. I don't have one. I must stop and ask the user.
+Final Answer: To proceed with a warranty claim, I will need the serial number of your product. Could you please provide it?
+""" 
+
+    prompt.template = new_prompt_template + "\n\n" + prompt.template
+
+    agent = create_react_agent(llm, tools, prompt) # <-- FIX 3: Use the new prompt here
+    return agent, tools, lambda: retrieved_docs_for_logging
+
+# --- 4. Main Application Logic ---
+if "messages" not in st.session_state:
+    st.session_state.messages = [AIMessage(content="Hello! I am SentioBot. How can I assist you with your Nexora devices today?")]
+
+if "store" not in st.session_state:
+    st.session_state.store = ChatMessageHistory()
+
+if "memory" not in st.session_state:
+    # k=4 means it will remember the last 2 back-and-forth exchanges.
+    st.session_state.memory = ConversationBufferWindowMemory(
+        k=6, 
+        memory_key="chat_history", # This key MUST match the placeholder in the react-chat prompt
+        return_messages=True,
+        chat_memory=st.session_state.store
+    )
+if "current_user_id" not in st.session_state:
+    st.session_state.current_user_id = None
+if "last_interaction" not in st.session_state:
+    st.session_state.last_interaction = {}
+
+retriever = get_retriever()
+agent, tools, get_retrieved_docs = get_agent_executor(retriever)
+
+agent_executor = AgentExecutor(
+    agent=agent, 
+    tools=tools, 
+    memory=st.session_state.memory, # Connect the session's memory
+    verbose=True, 
+    handle_parsing_errors=True
+)
+
+# --- 5. UI and Chat Logic ---
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+
+with st.sidebar:
+    st.markdown("""
+    <div style="text-align: center;">
+        <svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 24" fill="none" stroke="#58A6FF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+        </svg>
+    </div>
+    """, unsafe_allow_html=True)
+    st.header("👤 User Login")
+
+    if not st.session_state.logged_in:
+        username_input = st.text_input("Username", key="username_input")
+        password_input = st.text_input("Password", type="password", key="password_input")
+
+        if st.button("Login"):
+            # Check if user exists and password is correct
+            # FIX 1: Convert username input to lowercase for case-insensitive matching
+            user_key = username_input.lower()
+
+            if user_key in USERS and USERS[user_key]["password"] == password_input:
+                st.session_state.logged_in = True
+                st.session_state.current_user_id = user_key # Use the lowercase key
+                st.session_state.messages = [AIMessage(content=f"Hello {USERS[user_key]['name']}! Welcome back.")]
+                st.session_state.memory.clear()
+                st.rerun()
+            else:
+                st.error("Incorrect username or password")
+    
+    if st.session_state.logged_in:
+        user_name = USERS[st.session_state.current_user_id]['name']
+        st.success(f"Logged in as: **{user_name}**")
+        
+        if st.button("Logout"):
+            st.session_state.logged_in = False
+            st.session_state.current_user_id = "guest"
+            st.session_state.messages = [AIMessage(content="You have been logged out. How can I help?")]
+            st.session_state.memory.clear()
+            st.rerun()
+
+    st.header("About SentioBot")
+    st.info("An AI-powered assistant for Nexora Electronics, providing instant support from official documentation.")
+    st.header("Tech Stack")
+    st.markdown("- Streamlit\n- LangChain\n- Google Gemini\n- ChromaDB\n- BM25")
+    
+    # NEW FEATURE: Clear Chat History Button
+    if st.button("Clear Conversation"):
+        st.session_state.messages = [AIMessage(content=f"Hello {USERS[st.session_state.current_user_id]['name']}! How can I help?")]
+        st.session_state.memory.clear()
+        st.session_state.last_interaction = {}
+        st.rerun()
+
+st.title("SentioBot: Your Nexora Electronics Expert")
+
+if not st.session_state.messages:
+    st.session_state.messages = [AIMessage(content="Please log in to begin, or ask a question as a Guest.")]
+
+for i, msg in enumerate(st.session_state.messages):
+    avatar = USER_AVATAR if isinstance(msg, HumanMessage) else ASSISTANT_AVATAR
+    with st.chat_message(msg.type, avatar=avatar):
+        st.markdown(msg.content)
+        # NEW: Add feedback buttons to assistant messages
+        if isinstance(msg, AIMessage) and i > 0: # Don't add to the first greeting
+            interaction_id = st.session_state.last_interaction.get("interaction_id")
+            if interaction_id:
+                cols = st.columns([10, 1, 1])
+                with cols[1]:
+                    if st.button("👍", key=f"thumb_up_{i}"):
+                        log_interaction({"interaction_id": interaction_id, "feedback": 1})
+                        st.toast("Thanks for your feedback!", icon="😊")
+                with cols[2]:
+                    if st.button("👎", key=f"thumb_down_{i}"):
+                        log_interaction({"interaction_id": interaction_id, "feedback": -1})
+                        st.toast("Thanks! We'll use this to improve.", icon="🙏")
+
+if user_query := st.chat_input("Ask me about Nexora products..."):
+    # Add user message to the display list
+    st.session_state.messages.append(HumanMessage(content=user_query))
+    with st.chat_message("user", avatar=USER_AVATAR):
+        st.markdown(user_query)
+
+    with st.chat_message("assistant", avatar=ASSISTANT_AVATAR):
+        with st.spinner("Thinking..."):
+            try:
+                user_profile = USERS.get(st.session_state.current_user_id, USERS["guest"])
+                if user_profile['name'] != "Guest":
+                    user_profile_str = f"Name: {user_profile['name']}\nOwned Products: {', '.join(user_profile['owned_products'])}"
+                    
+                    combined_input = f"""
+### User Profile Context
+{user_profile_str}
+---
+### User's Question
+{user_query}
+"""
+                else:
+                    combined_input = user_query # For guests, the input is just their question
+
+                # Now, invoke the agent with only the 'input' key.
+                response = agent_executor.invoke({
+                    "input": combined_input
+                })
+                
+                final_answer = response.get("output", "I'm sorry, I encountered an error.")
+                st.session_state.messages.append(AIMessage(content=final_answer))
+
+                # NEW: Log the interaction
+                interaction_id = datetime.now().strftime('%Y%m%d%H%M%S%f')
+                log_entry = {
+                    "interaction_id": interaction_id,
+                    "timestamp": datetime.now().isoformat(),
+                    "user_id": st.session_state.current_user_id,
+                    "user_query": user_query,
+                    "bot_response": final_answer,
+                    "retrieved_docs": get_retrieved_docs(),
+                    "feedback": 0 # Default feedback
+                }
+                log_interaction(log_entry)
+                st.session_state.last_interaction = log_entry # Store for feedback buttons
+                
+                st.rerun()
+
+            except Exception as e:
+                error_msg = f"Sorry, I encountered an error: {str(e)}"
+                st.error(error_msg)
+                st.session_state.messages.append(AIMessage(content=error_msg))
+                st.rerun()
+
+#tools.py
+# tools.py - UPGRADED WITH INFORMATIVE USER OUTPUT
+
+import uuid
+import json
+from datetime import datetime, timedelta
+from langchain.tools import tool
+from mock_db import ORDERS, PRODUCTS
+
+# The log_action helper function remains the same
+def log_action(tool_name: str, input_data: dict, result: str):
+    """A helper function to print structured logs."""
+    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    print("\n" + "="*60)
+    print(f"[{timestamp}] Executing Tool: {tool_name}")
+    print("-"*60)
+    print("INPUT:")
+    print(json.dumps(input_data, indent=2))
+    print("\nRESULT:")
+    print(result)
+    print("="*60 + "\n")
+
+
+@tool
+def check_order_status(order_id: str) -> str:
+    """
+    Use this tool to check the status of a specific customer order by its ID.
+    It takes an order_id string and returns the order's current status.
+    """
+    order = ORDERS.get(order_id)
+    log_action(
+        tool_name="check_order_status",
+        input_data={"order_id": order_id},
+        result=f"Found Order Details: {json.dumps(order, indent=2) if order else 'None'}"
+    )
+    
+    if not order:
+        return f"I couldn't find any order with the ID '{order_id}'. Please double-check the order number."
+    else:
+        # NEW INFORMATIVE OUTPUT for the user
+        shipped_date = f"Shipped on: {order['shipped_on']}" if order['shipped_on'] else "Awaiting shipment."
+        items_list = "\n".join([f"- {item}" for item in order['items']])
+        return (
+            f"I've found the details for order **{order_id}**:\n\n"
+            f"**Status:** {order['status']}\n\n"
+            f"**Items:**\n{items_list}\n\n"
+            f"*{shipped_date}*"
+        )
+
+@tool
+def check_warranty_status(serial_number: str) -> str:
+    """
+    Use this tool to check the warranty status of a Nexora product using its serial number.
+    It takes a serial_number string and returns if the product is under warranty.
+    """
+    product = PRODUCTS.get(serial_number)
+    
+    if not product:
+        log_action("check_warranty_status", {"serial_number": serial_number}, "Product not found in database.")
+        return f"I couldn't find a product with the serial number '{serial_number}'. Please verify the number on your device."
+
+    warranty_end_date = product["purchase_date"] + timedelta(days=30 * product["warranty_months"])
+    is_active = datetime.now() < warranty_end_date
+    status_text = "✅ Active" if is_active else "❌ Expired"
+
+    log_details = {
+        "product_details": {k: (v.strftime('%Y-%m-%d') if isinstance(v, datetime) else v) for k, v in product.items()},
+        "warranty_expires_on": warranty_end_date.strftime('%Y-%m-%d'),
+        "is_active": is_active
+    }
+    log_action(
+        tool_name="check_warranty_status",
+        input_data={"serial_number": serial_number},
+        result=json.dumps(log_details, indent=2)
+    )
+
+    # NEW INFORMATIVE OUTPUT for the user
+    return (
+        f"Here is the warranty status for serial number **{serial_number}**:\n\n"
+        f"- **Product:** {product['product_name']}\n"
+        f"- **Purchase Date:** {product['purchase_date'].strftime('%Y-%m-%d')}\n"
+        f"- **Warranty Expires:** {warranty_end_date.strftime('%Y-%m-%d')}\n"
+        f"- **Status:** {status_text}"
+    )
+
+@tool
+def lookup_documentation(query: str) -> str:
+    """
+    Use this tool FIRST to answer general questions about Nexora products,
+    troubleshooting, and company policies (like returns or defects).
+    This should be your default tool unless the user asks for a specific
+    order status, warranty status, or explicitly wants to talk to a human.
+    """
+    # NOTE: The implementation of this tool is now in app.py
+    # This is just a placeholder for the agent's reference.
+    pass
+
+@tool
+def create_support_ticket(conversation_summary: str) -> str:
+    """
+    Use this tool ONLY as a last resort if the user wants to speak to a human
+    OR if you have already tried the `lookup_documentation` tool and could not
+    find a satisfactory answer. Do not use this tool for simple questions.
+    """
+    ticket_id = f"TICKET-{uuid.uuid4().hex[:6].upper()}"
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    ticket_details = {"ticket_id": ticket_id, "timestamp": timestamp, "summary": conversation_summary}
+    with open("support_tickets.log", "a", encoding="utf-8") as f:
+        f.write(f"--- TICKET CREATED ---\n{json.dumps(ticket_details, indent=2)}\n\n")
+    
+    log_action(
+        tool_name="create_support_ticket",
+        input_data={"conversation_summary": conversation_summary},
+        result=f"Successfully created ticket. Details logged. Ticket ID: {ticket_id}"
+    )
+
+    # NEW INFORMATIVE OUTPUT for the user
+    return (
+        f"I've created a support ticket for you. A human support agent will be in touch shortly.\n\n"
+        f"**Your Reference Details:**\n"
+        f"- **Ticket ID:** `{ticket_id}`\n"
+        f"- **Time Logged:** {timestamp}"
+    )
+
+# mock_db.py
+# mock_db.py
+
+from datetime import datetime, timedelta
+
+# ==============================================================================
+#  SYNCHRONIZED PRODUCT DATABASE
+#  This data is based on the product manuals you provided.
+#  Current Date for testing: September 30, 2025
+# ==============================================================================
+
+PRODUCTS = {
+    # --- Nexora Thermostat Pro (2-year / 24-month warranty) ---
+    "SN-NTS-PRO-XYZ987": {
+        "product_name": "Nexora Thermostat Pro",
+        "purchase_date": datetime.strptime("2023-08-15", "%Y-%m-%d"),
+        # This warranty is EXPIRED as of Aug 2025.
+        "warranty_months": 24
+    },
+    "SN-NTS-PRO-ABC123": {
+        "product_name": "Nexora Thermostat Pro",
+        "purchase_date": datetime.strptime("2024-11-01", "%Y-%m-%d"),
+        # This warranty is ACTIVE.
+        "warranty_months": 24
+    },
+
+    # --- LumiGlow Smart Light (1-year / 12-month warranty) ---
+    "SN-NLRGB-LMO456": {
+        "product_name": "LumiGlow Smart Light",
+        "purchase_date": datetime.strptime("2025-05-20", "%Y-%m-%d"),
+        # This warranty is ACTIVE.
+        "warranty_months": 12
+    },
+
+    # --- SecureSphere 360 Camera (1-year / 12-month warranty) ---
+    "SN-NCS360-CAM789": {
+        "product_name": "SecureSphere 360 Camera",
+        "purchase_date": datetime.strptime("2024-02-10", "%Y-%m-%d"),
+        # This warranty is EXPIRED as of Feb 2025.
+        "warranty_months": 12
+    }
+}
+
+# ==============================================================================
+#  SYNCHRONIZED ORDER DATABASE
+#  These orders now contain the real products from your documentation.
+# ==============================================================================
+
+ORDERS = {
+    "NX-2025-301": {
+        "status": "Shipped",
+        "shipped_on": "2025-09-28",
+        "items": ["SecureSphere 360 Camera", "LumiGlow Smart Light"]
+    },
+    "NX-2025-302": {
+        "status": "Processing",
+        "shipped_on": None,
+        "items": ["Nexora Thermostat Pro"]
+    },
+    "NX-2025-303": {
+        "status": "Delivered",
+        "shipped_on": "2025-09-22",
+        "items": ["LumiGlow Smart Light"]
+    }
+}
+
+USERS = {
+    "alice": {
+        "password": "password123", # Add this
+        "name": "Alice",
+        "owned_products": ["Nexora Thermostat Pro", "LumiGlow Bulb"]
+    },
+    "bob": {
+        "password": "password456", # Add this
+        "name": "Bob",
+        "owned_products": ["Sentio Smart Hub"]
+    },
+    "guest": {
+        "password": "", # Guest has no password
+        "name": "Guest",
+        "owned_products": []
+    }
+}
+

@@ -7,7 +7,6 @@ __pycache__/
 parents.pkl
 .env
 
-sample-codes.txt
 scripts/__pycache__
 
 scripts/__init__.py

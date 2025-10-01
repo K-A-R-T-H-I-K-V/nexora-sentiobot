@@ -288,12 +288,13 @@ When you receive the user's input, it may contain a special section with their p
 ---
 
 ## Rules of Engagement
-1.  **Check History First (Memory):** Before doing anything else, check the `chat_history`. If the user has already provided information (like a serial number or order ID), you MUST reuse it. Do not ask for it again.
-2.  **Stop if Information is Missing:** If a tool requires specific information that you don't have (and it's not in the history), your ONLY action is to stop and ask the user for it. **Never** call a tool with placeholder information.
-3.  **Be Proactive:** After a successful tool use, think about the next logical step to help the user. For example, if a warranty is active, find the claim process.
-4.  **Synthesize Answers:** When you have all the necessary information (often from multiple tools), combine it into a single, comprehensive, and helpful final answer.
-5.  **Handle Failures:** If `lookup_documentation` yields no relevant results, state that you couldn't find the information and ask the user if they'd like a support ticket created.
-6.  **Offer the Next Action:** After successfully providing information (like the warranty claim process), if you have a tool that can perform the next logical step (like `create_support_ticket`), you MUST offer to use it.
+1.  **CRITICAL - BE PROACTIVE:** If the user's profile includes a **serial number** for a product they are asking about, you **MUST** use that serial number with the appropriate tool (like `check_warranty_status`) proactively. **DO NOT** ask the user for a serial number if you already have it in their profile.
+2.  **Check History First (Memory):** Before doing anything else, check the `chat_history`. If the user has already provided information (like a serial number or order ID), you MUST reuse it. Do not ask for it again.
+3.  **Stop if Information is Missing:** If a tool requires specific information that you don't have (and it's not in the history), your ONLY action is to stop and ask the user for it. **Never** call a tool with placeholder information.
+4.  **Be Proactive:** After a successful tool use, think about the next logical step to help the user. For example, if a warranty is active, find the claim process.
+5.  **Synthesize and Conclude:** After you have used all necessary tools and gathered all the information, you MUST synthesize it into a single, comprehensive response. This final response **MUST** begin with the `Final Answer:` tag. Do not output the answer directly without the tag.
+6.  **Handle Failures:** If `lookup_documentation` yields no relevant results, state that you couldn't find the information and ask the user if they'd like a support ticket created.
+7.  **Offer the Next Action:** After successfully providing information (like the warranty claim process), if you have a tool that can perform the next logical step (like `create_support_ticket`), you MUST offer to use it.
 
 ---
 
@@ -307,10 +308,13 @@ When you receive the user's input, it may contain a special section with their p
 ## CRITICAL: ReAct Framework Syntax
 You MUST follow this output format. Every turn must end with either `Action` or `Final Answer`.
 
-### When to use `Action`:
-Use `Action` when you need to run a tool to get more information.
-
+### When to use `Action` (Single Tool):
 Thought: I need to check the warranty. I have the serial number from the chat history. I should use the `check_warranty_status` tool.
+Action: check_warranty_status
+Action Input: SN-NTS-PRO-ABC123
+
+### When to use `Action` (Multi-Tool Plan):
+Thought: The user has a defective product. I should first check the warranty for all their products to be helpful, and then look up the warranty claim process. I'll start with the first product.
 Action: check_warranty_status
 Action Input: SN-NTS-PRO-ABC123
 
@@ -319,8 +323,8 @@ Use `Final Answer` for two scenarios:
 1.  You have all the information needed and can directly answer the user.
 2.  You need more information FROM THE USER and must ask them a question.
 
-Thought: I have looked up the policy and see that I need a serial number. I don't have one. I must stop and ask the user.
-Final Answer: To proceed with a warranty claim, I will need the serial number of your product. Could you please provide it?
+Thought: I have successfully checked the warranty for both products and looked up the claim process. I have all the information needed to give a complete answer. I will now synthesize this into a final response.
+Final Answer: Both of your products are under warranty. To start a claim, you need to contact support with your serial number and proof of purchase. Would you like me to create a support ticket for you?
 """ 
 
     prompt.template = new_prompt_template + "\n\n" + prompt.template
@@ -356,7 +360,8 @@ agent_executor = AgentExecutor(
     tools=tools, 
     memory=st.session_state.memory, # Connect the session's memory
     verbose=True, 
-    handle_parsing_errors=True
+    # handle_parsing_errors=True
+    handle_parsing_errors="Your previous output was not in the correct format. Remember to ALWAYS end your response with a valid 'Action:' block or a 'Final Answer:'."
 )
 
 # --- 5. UI and Chat Logic ---
@@ -448,8 +453,19 @@ if user_query := st.chat_input("Ask me about Nexora products..."):
             try:
                 user_profile = USERS.get(st.session_state.current_user_id, USERS["guest"])
                 if user_profile['name'] != "Guest":
-                    user_profile_str = f"Name: {user_profile['name']}\nOwned Products: {', '.join(user_profile['owned_products'])}"
+                    # -- BEFORE (Your current code) --
+                    # user_profile_str = f"Name: {user_profile['name']}\nOwned Products: {', '.join(user_profile['owned_products'])}"
                     
+                    # -- AFTER (Replace with this new logic) --
+                    user_profile_str = f"Name: {user_profile['name']}"
+                    if user_profile['owned_products']:
+                        owned_products_list = [
+                            f"- {p['product_name']} (Serial: {p['serial_number']})" 
+                            for p in user_profile['owned_products']
+                        ]
+                        owned_products_details = "\n".join(owned_products_list)
+                        user_profile_str += f"\nOwned Products:\n{owned_products_details}"
+                                        
                     combined_input = f"""
 ### User Profile Context
 {user_profile_str}

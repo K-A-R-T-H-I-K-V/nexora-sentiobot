@@ -63,19 +63,35 @@ ORDERS = {
     }
 }
 
+# mock_db.py
 USERS = {
     "alice": {
-        "password": "password123", # Add this
+        "password": "password123",
         "name": "Alice",
-        "owned_products": ["Nexora Thermostat Pro", "LumiGlow Bulb"]
+        # NEW STRUCTURE: A list of specific product instances
+        "owned_products": [
+            {
+                "product_name": "Nexora Thermostat Pro",
+                "serial_number": "SN-NTS-PRO-ABC123" # The active warranty one
+            },
+            {
+                "product_name": "LumiGlow Smart Light",
+                "serial_number": "SN-NLRGB-LMO456"
+            }
+        ]
     },
     "bob": {
-        "password": "password456", # Add this
+        "password": "password456",
         "name": "Bob",
-        "owned_products": ["Sentio Smart Hub"]
+        "owned_products": [
+            {
+                "product_name": "SecureSphere 360 Camera",
+                "serial_number": "SN-NCS360-CAM789" # The expired warranty one
+            }
+        ]
     },
     "guest": {
-        "password": "", # Guest has no password
+        "password": "",
         "name": "Guest",
         "owned_products": []
     }

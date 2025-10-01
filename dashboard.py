@@ -56,6 +56,14 @@ if not data.empty:
     col2.metric("👍 Positive Feedback", f"{positive_feedback}")
     col3.metric("👎 Negative Feedback", f"{negative_feedback}")
 
+    st.header("Conversations with Negative Feedback")
+    negative_feedback_df = filtered_data[filtered_data['feedback'] == -1]
+    if not negative_feedback_df.empty:
+        st.warning("These conversations need review. Users were not satisfied.")
+        st.dataframe(negative_feedback_df[['timestamp', 'user_id', 'user_query', 'bot_response']], use_container_width=True)
+    else:
+        st.success("No negative feedback recorded yet. Great job! 👍")
+
     # --- Most Frequent Questions ---
     st.header("Most Frequent Questions")
     question_counts = filtered_data['user_query'].value_counts().nlargest(10)
@@ -65,10 +73,11 @@ if not data.empty:
     st.header("Queries with No Documents Found")
     no_docs_df = filtered_data[filtered_data['retrieved_docs'].apply(lambda x: not x)]
     if not no_docs_df.empty:
+        st.info("The bot found no documentation for these queries. Consider creating content to answer them.")
         st.dataframe(no_docs_df[['timestamp', 'user_id', 'user_query']], use_container_width=True)
     else:
-        st.success("No queries resulted in zero documents found. Great retriever performance!")
-
+        st.success("All queries successfully retrieved documents!")
+        
     # --- Detailed Interaction Log ---
     with st.expander("View Full Interaction Log", expanded=False):
         st.dataframe(filtered_data)

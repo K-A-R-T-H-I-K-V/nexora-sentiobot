@@ -17,13 +17,15 @@ from langchain.storage import LocalFileStore
 from langchain.storage._lc_store import create_kv_docstore
 from langchain.retrievers.multi_query import MultiQueryRetriever
 from pydantic import BaseModel, Field
-from langchain_core.runnables import RunnablePassthrough
+from langchain_core.runnables import RunnablePassthrough, RunnableLambda
 from langchain.docstore.document import Document
 from langchain.tools import tool 
 from langchain.agents import AgentExecutor, create_react_agent
 from tools import check_order_status, check_warranty_status, create_support_ticket
 from langchain.retrievers import EnsembleRetriever
 from langchain import hub
+from langchain.memory import ConversationBufferWindowMemory
+from langchain_community.chat_message_histories import ChatMessageHistory
 
 # Set up logging to see the generated queries in the terminal (optional but helpful)
 logging.basicConfig()
@@ -133,7 +135,7 @@ def format_docs_with_ids(docs: List[Document]) -> str:
 
 # --- 3. Agent and Tools Definition ---
 @st.cache_resource(show_spinner="Initializing Agent...")
-def get_agent_executor(_retriever, chat_history: List):
+def get_agent_executor(_retriever):
     """Creates the Agent with all its tools, including the RAG chain."""
     llm = get_llm()
 
@@ -200,9 +202,11 @@ Begin!
 
 `Question`:
 {input}"""
-        qa_prompt = ChatPromptTemplate.from_messages(
-            [("system", qa_system_prompt), MessagesPlaceholder(variable_name="chat_history")]
-        )
+        qa_prompt = ChatPromptTemplate.from_messages([
+            ("system", qa_system_prompt), 
+            # MessagesPlaceholder(variable_name="chat_history"), 
+            ("human", "{input}")
+        ])
         docs = _retriever.invoke(query)
 
         # New detailed log of retrieved documents
@@ -212,14 +216,18 @@ Begin!
         print("="*60 + "\n")
 
         rag_chain = (
-            RunnablePassthrough.assign(context=(lambda x: format_docs_with_ids(x["context"])))
+            {
+                "context": lambda x: format_docs_with_ids(x["context"]),
+                "input": lambda x: x["input"],
+                # "chat_history": lambda x: x["chat_history"], # We guarantee it's here
+            }
             | qa_prompt
             | structured_llm_rag
         )
         response = rag_chain.invoke({
             "context": docs, 
             "input": query, 
-            "chat_history": chat_history
+            # "chat_history": []
         })
         if isinstance(response, AnswerWithCitations):
             return format_answer_with_citations(response, docs)
@@ -234,52 +242,81 @@ Begin!
     
     # FIX 2: Pull the official, compatible prompt from LangChain Hub
     # Pull the base prompt
-    prompt = hub.pull("hwchase17/react")
+    prompt = hub.pull("hwchase17/react-chat")
     
     # THIS IS THE FINAL, UPGRADED PROMPT WITH BETTER JUDGMENT
-    new_prompt_template = """## Persona
-You are SentioBot, the official AI customer support expert for Nexora Electronics.
-Your persona is: **Professional, precise, helpful, and an expert in the company's policies.**
-Your primary goal is to resolve user issues accurately using the provided tools.
+    # A REFINED, MORE RELIABLE PROMPT STRUCTURE
 
-## Core Directives & Thought Process
-1.  **Analyze Query:** First, understand the user's core need. Is it a question for information, a request for an action, or a problem statement?
-2.  **Form a Plan:** Based on the query, decide your strategy. Think step-by-step.
-3.  **Tool Priority:** You must follow this strict order of operations.
-    - **Step A: Documentation First.** For any question about policies (returns, defects, warranty), product features, or troubleshooting, your default first step is **ALWAYS** to use the `lookup_documentation` tool.
-    - **Step B: Specific Data Tools.** Only use `check_order_status` or `check_warranty_status` if a specific ID (like "NX-...") or serial number (like "SN-...") is provided.
-    - **Step C: Last Resort Ticket.** Only use `create_support_ticket` if you have already used `lookup_documentation` and the documents contained **absolutely no relevant information**, or if the user explicitly asks to speak to a human.
+    new_prompt_template = """## Persona & Objective
+You are SentioBot, a helpful and precise AI support agent for Nexora Electronics. Your primary objective is to resolve user issues by using tools, recalling conversation history, and strictly following all rules.
 
-## CRITICAL RULE FOR SYNTHESIS AND ACTION
-- After using a tool, you **MUST** analyze the result in the context of the user's original question.
-- **Do not simply output the tool's result if another step is logically required.**
-- **Example 1 (Proactive Help):** If the user reports a "defective product" and you use `check_warranty_status` and find the warranty is **Active**, your next step is to use `lookup_documentation` to find the warranty claim process and explain it to the user.
-- **Example 2 (Polite Refusal):** If the user reports a "defective product" and you use `check_warranty_status` and find the warranty is **Expired**, you must state that the warranty has expired and that you are unable to process a replacement. Do **not** create a support ticket unless the user asks for one.
+---
 
-## CRITICAL RULE FOR OUTPUT FORMATTING
-- When you are ready to give the final answer, if the information from a tool is already well-formatted (e.g., with Markdown lists), you **MUST** use that exact formatting. Do not rephrase it.
+## Rules of Engagement
+1.  **Check History First (Memory):** Before doing anything else, check the `chat_history`. If the user has already provided information (like a serial number or order ID), you MUST reuse it. Do not ask for it again.
+2.  **Stop if Information is Missing:** If a tool requires specific information that you don't have (and it's not in the history), your ONLY action is to stop and ask the user for it. **Never** call a tool with placeholder information.
+3.  **Be Proactive:** After a successful tool use, think about the next logical step to help the user. For example, if a warranty is active, find the claim process.
+4.  **Synthesize Answers:** When you have all the necessary information (often from multiple tools), combine it into a single, comprehensive, and helpful final answer.
+5.  **Handle Failures:** If `lookup_documentation` yields no relevant results, state that you couldn't find the information and ask the user if they'd like a support ticket created.
+6.  **Offer the Next Action:** After successfully providing information (like the warranty claim process), if you have a tool that can perform the next logical step (like `create_support_ticket`), you MUST offer to use it.
 
-## Constraints
-- Do not make up information.
-- **Handling Failures:** If you use the `lookup_documentation` tool and it returns no relevant information for the user's query, your Final Answer must do two things:
-    1.  State clearly that you could not find the specific information.
-    2.  Ask the user if they would like you to create a support ticket.
-- **Example Failure Response:** "I was unable to find specific details about [user's topic] in the documentation. Would you like me to create a support ticket for you so a human agent can assist?"
-- You must wait for the user to confirm before you use the `create_support_ticket` tool on the next turn.
+---
 
-""" + prompt.template
+## Tool Usage Protocol
+* **`lookup_documentation`:** Use this FIRST for all questions about policies, product features, or troubleshooting.
+* **`check_warranty_status` / `check_order_status`:** Use these ONLY when you have a specific serial number or order ID from the user or chat history.
+* **`create_support_ticket`:** Use this as a LAST RESORT, either when documentation fails or when the user explicitly asks for a human agent.
 
-    prompt.template = new_prompt_template
+---
+
+## CRITICAL: ReAct Framework Syntax
+You MUST follow this output format. Every turn must end with either `Action` or `Final Answer`.
+
+### When to use `Action`:
+Use `Action` when you need to run a tool to get more information.
+
+Thought: I need to check the warranty. I have the serial number from the chat history. I should use the `check_warranty_status` tool.
+Action: check_warranty_status
+Action Input: SN-NTS-PRO-ABC123
+
+### When to use `Final Answer`:
+Use `Final Answer` for two scenarios:
+1.  You have all the information needed and can directly answer the user.
+2.  You need more information FROM THE USER and must ask them a question.
+
+Thought: I have looked up the policy and see that I need a serial number. I don't have one. I must stop and ask the user.
+Final Answer: To proceed with a warranty claim, I will need the serial number of your product. Could you please provide it?
+""" 
+
+    prompt.template = new_prompt_template + "\n\n" + prompt.template
     
     agent = create_react_agent(llm, tools, prompt) # <-- FIX 3: Use the new prompt here
-    return AgentExecutor(agent=agent, tools=tools, verbose=True, handle_parsing_errors=True)
+    return agent, tools
 
 # --- 4. Main Application Logic ---
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = [AIMessage(content="Hello! I am SentioBot. How can I assist you with your Nexora devices today?")]
+if "messages" not in st.session_state:
+    st.session_state.messages = [AIMessage(content="Hello! I am SentioBot. How can I assist you with your Nexora devices today?")]
+if "store" not in st.session_state:
+    st.session_state.store = ChatMessageHistory()
+if "memory" not in st.session_state:
+    # k=4 means it will remember the last 2 back-and-forth exchanges.
+    st.session_state.memory = ConversationBufferWindowMemory(
+        k=6, 
+        memory_key="chat_history", # This key MUST match the placeholder in the react-chat prompt
+        return_messages=True,
+        chat_memory=st.session_state.store
+    )
 
 retriever = get_retriever()
-agent_executor = get_agent_executor(retriever, st.session_state.chat_history)
+agent, tools = get_agent_executor(retriever)
+
+agent_executor = AgentExecutor(
+    agent=agent, 
+    tools=tools, 
+    memory=st.session_state.memory, # Connect the session's memory
+    verbose=True, 
+    handle_parsing_errors=True
+)
 
 # --- 5. UI and Chat Logic ---
 with st.sidebar:
@@ -297,18 +334,20 @@ with st.sidebar:
     
     # NEW FEATURE: Clear Chat History Button
     if st.button("Clear Conversation"):
-        st.session_state.chat_history = [AIMessage(content="Hello! I am SentioBot. How can I assist you with your Nexora devices today?")]
+        st.session_state.messages = [AIMessage(content="Hello! I am SentioBot. How can I assist you with your Nexora devices today?")]
+        st.session_state.memory.clear()
         st.rerun()
 
 st.title("SentioBot: Your Nexora Electronics Expert")
 
-for msg in st.session_state.chat_history:
+for msg in st.session_state.messages:
     avatar = USER_AVATAR if isinstance(msg, HumanMessage) else ASSISTANT_AVATAR
     with st.chat_message(msg.type, avatar=avatar):
         st.markdown(msg.content)
 
 if user_query := st.chat_input("Ask me about Nexora products..."):
-    st.session_state.chat_history.append(HumanMessage(content=user_query))
+    # Add user message to the display list
+    st.session_state.messages.append(HumanMessage(content=user_query))
     with st.chat_message("user", avatar=USER_AVATAR):
         st.markdown(user_query)
 
@@ -317,13 +356,12 @@ if user_query := st.chat_input("Ask me about Nexora products..."):
             try:
                 response = agent_executor.invoke({
                     "input": user_query,
-                    "chat_history": st.session_state.chat_history
                 })
                 final_answer = response.get("output", "I'm sorry, I encountered an error.")
-                st.session_state.chat_history.append(AIMessage(content=final_answer))
+                st.session_state.messages.append(AIMessage(content=final_answer))
                 st.rerun()
             except Exception as e:
                 error_msg = f"Sorry, I encountered an error: {str(e)}. Please try again."
                 st.error(error_msg)
-                st.session_state.chat_history.append(AIMessage(content=error_msg))
+                st.session_state.messages.append(AIMessage(content=error_msg))
                 st.rerun()

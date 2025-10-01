@@ -26,3 +26,10 @@
   "summary": "User wants to talk to a human agent to request a replacement for a defective product."
 }
 
+--- TICKET CREATED ---
+{
+  "ticket_id": "TICKET-715C3A",
+  "timestamp": "2025-10-01 13:37:34",
+  "summary": "User reported receiving a defective bulb (LumiGlow Smart Light, implied from previous conversation about order NX-2025-301 which included a LumiGlow Smart Light). The product with serial number SN-NTS-PRO-ABC123 (Nexora Thermostat Pro) has an active warranty expiring on 2026-10-22. User requests a replacement."
+}
+

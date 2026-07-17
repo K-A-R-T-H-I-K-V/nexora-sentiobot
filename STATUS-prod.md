@@ -477,6 +477,21 @@ Rank 8 (deferred to P7, not P3) - pgvector migration.
   P3 Rank 2 as ratified. A committed, dependency-light regression script
   (backend/scripts/check_cache_privacy.py) proves two users cannot share a
   personalized answer, and doubles as the future CI free-tier check.
+- 2026-07-17 (planner): Increment 1 (FOUNDATION) ACCEPTED. The reviewer
+  re-derived the gate table, reproduced the cache-privacy fix under a 21-probe
+  hostile battery, and found no P0/P1. LLM-dependent gates carry into
+  Increment 1.5 (blocked by Gemini quota, not code). Do not reopen Increment
+  1. Full verdict in the REVIEW and PLANNER RATIFICATION sections below.
+- 2026-07-17 (planner): LLM provider Gemini -> Groq RATIFIED as a FOUNDATION
+  prerequisite (Increment 1.5), not a P3 optimization: a dead LLM blocks the
+  demo and all P1/P2 baselining, so restoring the substrate does not violate
+  measure-before-optimize. Provider goes behind an LLM_PROVIDER config +
+  factory in get_llm (future swaps are config, not migrations). Model
+  llama-3.3-70b-versatile via langchain-groq, temperature 0, max_output_tokens
+  2048, pinned in every results recipe. P1/P2 baselines are established ON
+  GROQ. P2 note: the RAGAS judge must differ from the generator; free-tier
+  rate limits (~30 RPM) require the P2 harness to batch/sleep. Full detail in
+  the PLANNER RATIFICATION section below.
 
 ## INCREMENT LOG
 (builder logs each increment here: what changed, commit hashes, what
@@ -867,6 +882,250 @@ Explicitly NOT in this increment (gated, with reasons):
 - Cached responses (main.py cached_stream) log no analytics row and carry no
   interaction_id, so feedback is a no-op on a cached answer (N-4); revisit
   when the cache is exploited for latency in P3 Rank 2.
+- PULLED INTO INCREMENT 1.5 (ratified): F-1 raw-error sanitization (raised to
+  P2, live leak), F-2 allowlist token filter, F-3 persist message+conversation
+  on cache hit (supersedes N-4), F-4 README false-body trim, agent
+  max-iterations cap, and CPU-only torch pin. See the PLANNER RATIFICATION
+  section for the ratified 1.5 kickoff.
+- Self-signup / registration (only seeded users today) -> P7 feature, ranked;
+  the P6 public demo is NOT blocked (seeded guest login exists).
+- Cost guards (per-request token caps, bounded memory) -> P4; only the agent
+  max-iterations cap is pulled into Increment 1.5.
 
 ## REVIEW
-(reviewer verdicts land here)
+
+### Increment 1 - FOUNDATION, adversarial review (reviewer, 2026-07-17)
+
+Scope reviewed: the 9 commits 5909e08 (snapshot) through da17e8f on
+v2-fullstack. Everything below was re-derived from the code and re-run by
+the reviewer; the builder's gate table was not trusted. Environment:
+Windows 11, Python 3.11.9 in backend/venv (bcrypt 4.0.1 confirmed
+installed), Node v23.5.0, live backend/.env present. No gitleaks/trufflehog
+or ruff available locally; secrets were re-scanned with git plumbing and
+lint was substituted with byte-compilation.
+
+VERDICT: mostly clean. The headline security fix (cache privacy P0-2) is
+solid under a harder battery than the committed check. Boot, config
+refusal, frontend build, tool binding, and graceful failure all reproduce
+green. Findings below are one P2 (confirmed live info-leak, already flagged
+by the builder as P4) and three P3s. No P0 or P1 defects found in the
+shipped code. Several happy-path gates remain UNVERIFIABLE here because the
+LLM key returns 429 free_tier limit 0; that is infra, not a code defect,
+and it matches the builder's own honesty.
+
+INDEPENDENTLY RE-RUN AND CONFIRMED PASS:
+- Boot: `import backend.api.main` from repo root succeeds (app title
+  "SentioBot API" 2.0.0). The single-import-break (cache.py) and the
+  cwd-relative store/.env paths are genuinely fixed (config.py:21,55-58,70).
+- Config JWT refusal (config.py:81-93): placeholder and empty secret both
+  raise on boot in non-debug (pydantic ValidationError wrapping the
+  ValueError); DEBUG=true warns and continues. Reproduced all three cases.
+- Cache privacy P0-2 (cache.py:62-65,108-128,180-213): committed
+  check_cache_privacy passed twice (exit 0, stable). Reviewer's own 21-probe
+  hostile battery (3 users, 6 exact/near-duplicate cross-asks each, plus a
+  fresh-user probe, a same-user regression probe, and a NUL-delimiter key
+  forge) found NO cross-user leak on L1 or L2, and same-user exact hits
+  still work. L1/L3 key = sha256(user_id \x00 query); L2 masks non-owner
+  entries to score -1.0 before argmax. The fix holds.
+- Frontend build P2-6 (gate 8): `npm run build` compiled, types checked
+  (validates api.ts + chat/page.tsx edits), typography plugin present, 6
+  pages, exit 0.
+- Tool binding + unification P1-3 (agent.py:150-192): all four tools
+  (lookup_documentation, check_order_status, check_warranty_status,
+  create_support_ticket) bind with correct arg schemas; graph nodes are
+  [__start__, agent, tools]. Structurally sound.
+- Answer overwrite / sources P1-5 (agent.py:370-382): confirmed by trace
+  that full_answer is no longer clobbered with raw tool output; the agent
+  node's streamed tokens are the persisted answer and tool_sources come from
+  parsing lookup_documentation output.
+- Feedback wiring P1-4: main.py:171 injects interaction_id into the done
+  event; api.ts:45 + chat/page.tsx:183 consume it; submitFeedback posts
+  {interaction_id, feedback}. Coherent end to end at the code level (the DB
+  write itself needs live Supabase, not run here).
+- bcrypt pin (requirements.txt:12): bcrypt==4.0.1 present and installed;
+  login bug fix is real.
+- Graceful failure (see F-1 for the caveat): doc path, tool path, a
+  100K-char message, and a prompt-injection message ALL degrade to a single
+  clean `error` SSE event with no uncaught exception or stack trace reaching
+  the client.
+
+SECRETS: CLEAN for the pushable lineage. No `.env` is tracked anywhere in
+5909e08~1..da17e8f; the 9-commit diff adds no key values (only variable
+names and empty placeholders in .env.example and config defaults); a
+history `-S` scan for AIza/JWT patterns is empty; the old-leak commit
+02b6865 cited in the log does not exist in this repo at all (already purged,
+not merely unreachable). backend/.env is gitignored and is excluded from the
+backend image by backend/.dockerignore, so it does not bake into image
+layers. Independent confirmation of the builder's secrets claim: agreed.
+
+CONFIRMED FINDINGS (reviewer reproduced):
+
+F-1 [P2] Raw provider error text is forwarded verbatim to the client.
+  file: backend/agent/agent.py:336 and :386 (also surfaced by main.py's
+  passthrough of the error event).
+  Failure scenario: any LLM/retrieval exception is serialized as
+  `{'type':'error','data':{'message': str(e)}}`. Driving all four inputs
+  through stream_agent_response live produced an error event containing the
+  full Gemini 429 body: quota text, quota_dimensions, retry_delay, and
+  https://ai.google.dev/... links, delivered straight to the end user.
+  Reproduction: run backend with the current .env key and send any chat;
+  observe the error SSE payload. The builder flagged this as a deferred P4;
+  it is live now and leaks provider/infra/quota internals to end users, so
+  it should be sanitized to a generic message before any public deploy.
+  Raising to P2 because it is on the live user-facing path.
+
+F-2 [P3] Token-leak filter is a denylist, not the documented allowlist.
+  file: backend/agent/agent.py:360.
+  The DECISIONS log and the code comment both say "stream only
+  langgraph_node == 'agent' tokens", but the code streams every
+  on_chat_model_stream whose node is NOT "tools". For the current two-node
+  graph these are equivalent, so no leak today. Risk: if any third node is
+  added later, or if a top-level model-stream event arrives with no
+  langgraph_node tag (metadata.get returns None, and None != "tools"), the
+  nested MultiQueryRetriever expansion tokens would leak into the visible
+  answer. Cheap hardening: switch to the allowlist form
+  (`langgraph_node == "agent"`) the design already specifies.
+
+F-3 [P3] Cache-hit path skips message persistence, not just analytics.
+  file: backend/api/main.py:126-134.
+  On a cache hit the endpoint returns cached_stream and returns BEFORE
+  creating the conversation, saving the user message, or logging analytics.
+  N-4 in the log notes only the missing analytics/feedback; the broader
+  effect is that the whole exchange is absent from conversation history (the
+  sidebar loses that turn, and a None conversation_id creates no
+  conversation). Confirmed by code trace; not reproduced end to end because
+  populating the cache needs a live LLM. Pre-existing, but the increment's
+  user-scoped cache makes hits real, so it belongs on the P3/P4 list.
+
+F-4 [P3] README body still asserts flatly-false claims under the banner.
+  file: README.md:90,97,116,145-146.
+  The added status banner (README.md:11-16) discloses the sections as stale,
+  and the worst setup lines (pip freeze, Gemini 1.5) were removed. But the
+  body still states "The Streamlit app runs a stateful, reasoning agent"
+  (:90), "ConversationBufferWindowMemory" (:97), and lists app.py /
+  dashboard.py as the architecture (:145-146), all false against the
+  FastAPI + LangGraph + Next.js + Supabase reality. Disclosed-stale and
+  explicitly deferred to P6, so P3, not a blocker; noting that a banner over
+  concrete falsehoods is exactly the pattern this repo was burned by before.
+
+PLAUSIBLE / UNVERIFIED (blocked by dead infra, not proven defects):
+
+P-1 The token-leak SUPPRESSION itself (F-2's happy-path behavior), grounded
+  [Source N] synthesis on the tool path, non-empty sources on a real doc
+  answer, the end-to-end feedback DB write, and container runtime chat could
+  NOT be exercised: the .env Gemini key returns 429 with free_tier limit 0,
+  so no real completion streams. This is the builder's stated highest-risk
+  path and remains unverified. It cannot be closed until a working LLM key
+  (or the pending Groq migration) is in place. Recommend re-running gates 4,
+  5, and container-chat with quota before this increment is called done.
+
+P-2 Tool-path routing relies on the LLM CHOOSING to call lookup_documentation.
+  file: backend/agent/agent.py:302-305, :233-242.
+  A doc question containing a routing keyword (e.g. "warranty") enters the
+  graph, where grounding depends on the model actually calling the tool. If
+  it answers from parametric knowledge instead, there is no retrieved
+  context despite the "RAG FIRST" prompt. This is the ratified design, not a
+  regression; flagged so the P2 quality eval measures it honestly rather
+  than assuming grounding.
+
+CONTEXT (not findings):
+- No unit tests ship in this increment; the only executable check is
+  check_cache_privacy. ruff is not installed in the venv, so lint was
+  substituted with byte-compilation of all changed modules (clean).
+- google-genai remains unpinned (requirements.txt:23), matching N-3.
+- A plain `docker run` of the backend image (no compose volume) has no
+  stores and would FileNotFoundError on first chat; /health still works.
+  Consistent with the stated mount-the-stores design, not a defect.
+
+BOTTOM LINE: the shipped code is sound. The cache privacy fix, boot
+integrity, config hardening, and frontend build are genuinely done and
+reproduce green. Fix F-1 before any public exposure (it is a real live
+leak), take F-2 as cheap defensive hardening, and treat F-3/F-4 as tracked
+P3s. The increment is NOT closable as-is only because the LLM-dependent
+gates (chat happy path, sources, feedback write, container chat) cannot be
+run against a quota-zero key; those need a working provider, then a
+re-review of P-1.
+
+---
+
+## PLANNER RATIFICATION (2026-07-17): Increment 1 close + Groq (Increment 1.5)
+(Supersedes the ACTIVE KICKOFF for Increment 1 above; that increment is now accepted.)
+
+### Verdict
+- Increment 1 (FOUNDATION): ACCEPTED. Reviewer re-derived the gate table,
+  found no P0/P1, reproduced the cache-privacy fix under a 21-probe hostile
+  battery, and independently reproduced boot, JWT refusal, frontend build,
+  tool binding, graceful failure, and clean secrets. The code-verifiable
+  gates are met. The LLM-dependent gates (chat happy path, grounded
+  [Source N], sources, feedback DB write, container chat, token suppression)
+  are BLOCKED by infra (Gemini 429 free_tier limit 0), not code, and carry
+  into Increment 1.5. Do not reopen Increment 1.
+
+### Decisions
+- LLM provider Gemini -> Groq: RATIFIED as a foundation prerequisite
+  (Increment 1.5), not a P3 optimization. A dead LLM blocks the demo AND all
+  P1/P2 baselining, so restoring the substrate does not violate
+  measure-before-optimize. Consequence: the P1 latency and P2 quality
+  baselines are established ON GROQ and recorded as such.
+  (a) Provider: Groq via langchain-groq. REQUIRED refinement: put the
+      provider behind config (LLM_PROVIDER env + a factory inside get_llm)
+      so a future swap is config, not another migration.
+  (b) Model: llama-3.3-70b-versatile (verified current Groq production
+      2026-07-17: 131K context, 32K max completion, tool-calling capable),
+      temperature 0, max_output_tokens pinned 2048. Pin the exact model ID
+      in every results recipe; watch console.groq.com/docs/deprecations.
+      llama-3.1-8b-instant reserved for the P3 routing candidate, not now.
+  (c) Sequencing: Increment 1.5, not a reopen. Lands before Increment 2
+      (P1 latency) and Increment 3 (P2 quality).
+  (d) Golden set evaluated on Groq: yes. P2 open item to ratify: the RAGAS
+      judge should not be the same model as the generator (self-preference
+      bias); document the judge in the recipe, prefer a distinct free judge.
+      Free tier is ~30 RPM / ~14.4K req-day / ~6K TPM; the multi-query
+      retriever and the judge both spend requests, so the P2 harness must
+      batch/sleep within the daily budget. Pinned now, not a later surprise.
+
+### Reviewer findings, disposition (pulled into 1.5 for token efficiency)
+- F-1 (P2, raw provider error to client): INTO 1.5, not P4. Forwarding the
+  raw 429 body + internal URLs is a live info leak; emit a generic error SSE.
+- F-2 (P3, denylist vs allowlist token filter): INTO 1.5. The Groq swap
+  changes streaming-with-tools event tagging, so re-verify suppression and
+  make it the allowlist (== "agent") while there.
+- F-3 (P3, cache hit skips persisting message/conversation): INTO 1.5. It
+  holes multi-turn history, which the P2 golden set tests; fix before baseline.
+- F-4 (P3, README body still says Streamlit/app.py): targeted correctness
+  trim in 1.5; full rewrite stays P6.
+- Agent max-iterations cap: INTO 1.5 (LangGraph recursion limit). An
+  unbounded tool loop on Groq free tier can burn the daily quota. Fuller
+  cost guards (token caps, bounded memory) stay P4.
+- CPU-only torch pin: pulled forward from P5 into 1.5 (image ~13GB ->
+  testable container chat gate). One-line requirements change.
+- Secrets follow-up: prune local refs/original/ filter-branch backups +
+  expire reflog + gc; confirm origin never received the rotated key.
+  Exposure already closed by rotation; this is hygiene.
+
+### >>> ACTIVE KICKOFF: Increment 1.5 (BUILDER)
+MUST:
+- Provider abstraction + Groq swap in get_llm (config-selectable),
+  GROQ_API_KEY from env; embeddings + Chroma retrieval unchanged.
+- F-1 sanitize provider errors before the client.
+- Re-verify ALL Increment 1 LLM-dependent gates ON GROQ: chat both routes,
+  grounded [Source N] + sources populated, feedback writes a DB row, tool
+  path grounds/cites, graceful failure clean.
+SHOULD:
+- F-2 allowlist token filter + re-verify suppression under Groq.
+- F-3 persist user message + conversation on cache hit.
+- Agent max-iterations cap (LangGraph recursion limit).
+- CPU-only torch pin in requirements.
+LOW:
+- F-4 correctness-trim false README body claims (no full rewrite).
+GATE (Increment 1.5 done): every Increment 1 LLM-dependent gate passes on
+Groq; F-1 verified with a forced provider error; container chat works on the
+slimmed image; INCREMENT LOG updated with commit hashes + what was verified.
+Then a fresh reviewer re-reviews F-1 (confirms F-2/F-3), push v2-fullstack,
+and proceed to Increment 2 (P1 latency baseline on Groq).
+
+### Forward tasks (append)
+- Self-signup / registration (only seeded users today) -> P7 feature,
+  ranked; P6 public demo NOT blocked (seeded guest login exists).
+- CPU-only torch / image slim -> pulled into 1.5; rest of container opt P5.
+- Cost guards (token caps, bounded memory) -> P4; only agent max-iters in 1.5.

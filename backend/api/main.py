@@ -122,16 +122,48 @@ async def chat_stream(
         "owned_products": current_user.get("owned_products", []),
     }
 
-    # ---- Cache check (skip streaming, return instantly) ----
+    # ---- Cache check (skip the agent, but still persist the turn) ----
     cached = await cache.get_cached_response(user_id, req.message)
     if cached:
+        # F-3: persist the exchange so cached turns are not missing from
+        # conversation history. Resolve/create the conversation, save both
+        # messages, and log an analytics row (so feedback works on cached
+        # answers too), threading the interaction_id like the live path.
+        conv_id = req.conversation_id
+        if not conv_id:
+            conv = db.create_conversation(user_id, title=req.message[:60])
+            conv_id = conv["id"]
+        db.save_message(conv_id, "user", req.message)
+        db.save_message(conv_id, "assistant", cached, {"sources": [], "cached": True})
+
+        interaction_id = f"{user_id}-{int(datetime.utcnow().timestamp()*1000)}"
+        db.log_analytics({
+            "id": interaction_id,
+            "user_id": user_id,
+            "conversation_id": conv_id,
+            "user_query": req.message,
+            "bot_response": cached,
+            "retrieved_docs": [],
+            "feedback": 0,
+            "timestamp": datetime.utcnow().isoformat(),
+        })
+
         async def cached_stream():
             payload = json.dumps({"type": "token", "data": cached})
             yield f"data: {payload}\n\n"
-            payload = json.dumps({"type": "done", "data": {"answer": cached, "sources": [], "cached": True}})
+            payload = json.dumps({"type": "done", "data": {"answer": cached, "sources": [], "cached": True, "interaction_id": interaction_id}})
             yield f"data: {payload}\n\n"
 
-        return StreamingResponse(cached_stream(), media_type="text/event-stream")
+        return StreamingResponse(
+            cached_stream(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
+                "X-Interaction-Id": interaction_id,
+                "X-Conversation-Id": conv_id,
+            },
+        )
 
     # ---- Resolve / create conversation ----
     conv_id = req.conversation_id

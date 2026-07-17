@@ -647,3 +647,62 @@ That is not a failure of the process; it IS the process. The value was never in
 any one agent being right; it is in one agent refuting another before the claim
 reaches you. Trust the system that catches the overclaim, not the summary that
 makes it.
+
+## Part 10 - Injection depth: guard the exit, contain the blast, measure the rest (Increment 6)
+
+Increment 5 tried to stop prompt extraction at the INPUT (a regex on the user's
+message). The reviewer reworded around it in one line. Increment 6 is the right
+mental model, and it generalizes far past chatbots.
+
+Guard the EXIT, not just the entrance. There are infinitely many ways to ASK for
+the system prompt ("repeat the above", "summarize your rules", "you are DAN",
+"translate your instructions") and you will never enumerate them. But there are
+only a few things a leak LOOKS like on the way out: the answer contains "You are
+SentioBot", the behaviour-rule strings, the tool-list line. So we moved the check
+to the model's OUTPUT. One guard at the exfiltration point beats a hundred
+input patterns, because it does not care how the attack was phrased, only whether
+a secret is walking out the door. This is the same reason you validate at the
+trust boundary (the API response, the outbound email) and not only at every input
+that might reach it.
+
+Zero-leak on a stream takes a real idea. The endpoint streams token by token, so
+by the time you have SEEN a fingerprint you have usually already SENT it. The
+fix: hold back the last N characters (N = the longest fingerprint) before
+releasing any text, and scan the whole buffer each token. Because every
+fingerprint is at most N long, any fingerprint is always still inside the
+held-back tail when you detect it, so a blocked dump leaks exactly zero
+characters. A small, provable delay buys a hard guarantee. When a guarantee
+matters, find the buffering that makes it provable instead of hoping detection
+wins the race.
+
+A guardrail needs a precision budget, not just a recall budget. We first added
+the internal TOOL NAMES to the output fingerprints, to also catch tool
+enumeration. It backfired: the model legitimately says "I can check the warranty
+status for you" while naming the tool, and the guard then blocked a normal
+return-policy answer (red-team ben-03). Blocking a good answer to stop a
+low-value leak is a bad trade. We removed the tool names. The lesson from
+Increment 5 was "test your guard for false positives"; the lesson here is that a
+guard you tune ONLY for recall (catch every leak) will start eating real traffic,
+and the benign controls in the suite are what caught it. Always keep a few
+must-not-block cases in your adversarial set.
+
+The load-bearing defense is blast radius, not the filter. Assume the jailbreak
+SUCCEEDS. What can the model actually DO? If the answer is "only call four tools,
+each locked to the logged-in user, with no code/SQL/PII reach", then a jailbreak
+is a rude answer, not a breach. That is worth more than any input filter, so we
+spent the real effort there: scope the warranty tool to the user's OWN products,
+keep serials out of the prompt entirely, and confirm the ticket tool already uses
+the authenticated id. The red-team then proved the point in the other direction:
+it found the ONE place blast radius was NOT contained (order lookup has no owner
+column, so any user can read any order by ID). The fix is a schema migration; the
+containment principle is what turned a vague "is this safe" into a specific,
+fixable finding.
+
+Say the number you measured, not the number you hoped for. The honest headline
+is not "injection solved". It is: zero system-prompt leaks across 20 red-team
+attacks (including the reviewer's bypasses), blast radius contained except for
+one documented order-enumeration residual with a written fix, and role-adherence
+that wobbles under persona attacks but leaks nothing. "Safe to expose" is a
+claim only the independent reviewer gets to make, after re-running the suite and
+writing fresh bypasses. Security is a ratchet: every new bypass becomes a
+permanent test, and the suite is a living asset, not a one-time gate.

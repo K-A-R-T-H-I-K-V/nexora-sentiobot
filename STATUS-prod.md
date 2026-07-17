@@ -864,6 +864,62 @@ NOT DONE (deliberately, per the kickoff): no latency instrumentation.
 
 ---
 
+### Increment 2 - BASELINE: latency + call count + tokens (builder, 2026-07-17) - GATE MET
+
+Commits on v2-fullstack:
+- 7a6123f docs(status): reviewer 1.6 CLEAN + planner Increment 2 ratification.
+- eb5df80 feat(metrics): instrument the chat path (measurement only).
+- e19c001 feat(baseline): committed harness + results (2 runs, stamped).
+
+Measurement only; NO behavior change (verified: answers still stream
+identically; the added `metrics` SSE event is a trailing observation the
+frontend ignores). Instrumentation (backend/core/metrics.py): a per-request
+RequestMetrics in a ContextVar (per-request, concurrency-safe) capturing
+route, cache_hit, LLM-call count, embedding ops, Supabase round trips,
+prompt/completion tokens (Groq usage via a LangChain callback that propagates
+to nested LLM calls), and retriever wall time. Wired into agent.py (callbacks
++ retrieval timing + counting embedder + route), cache.py (counting embedder),
+database.py (db.* wrapped to count round trips), main.py (start + trailing
+metrics event). Harness: backend/scripts/latency_baseline.py (fixed set, both
+routes, warm-up to absorb singleton cold-start, cache cold + warm, p50/p95,
+stamped JSON). Results committed under results/ (latency_run_1.json,
+latency_run_2.json, latency_baseline.md).
+
+BASELINE (Groq llama-3.3-70b-versatile, temp 0, max_tokens 2048; commit
+eb5df80; Windows/AMD64/py3.11; localhost). Shown run1 / run2:
+- RAG cache-miss: TTFT p50 8599 / 11324 ms, p95 12921 / 11359 ms; e2e p50
+  9504 / 12206 ms; retrieval p50 642 / 602 ms.
+- Tool cache-miss: TTFT p50 11255 / 10863 ms, p95 25756 / 17021 ms.
+- Cache hit: TTFT p50 1391 / 1385 ms.
+- One-time singleton cold-start (first request after boot): ~21.8 s both runs.
+- Per-route call inventory (DETERMINISTIC, identical both runs): RAG = 2 LLM
+  calls, 7 embed ops, 5 Supabase round trips; Tool = 2-3 LLM calls
+  (query-dependent), 2 embed ops, 6-7 Supabase; Cache hit = 0 LLM, 1 embed
+  (L2), 4 Supabase (still persists the turn).
+- Tokens/request p50: RAG ~2.5K (2256 prompt / ~355 completion); Tool ~2.26K.
+
+VERIFIED:
+- Instrumentation counts match the planner's independent inventory exactly
+  (2 LLM calls per RAG answer; the MultiQueryRetriever is 1 of the 2).
+- Reproduced twice: call inventory and tokens are IDENTICAL across runs;
+  latency reproduces within Groq free-tier server-load variance (RAG TTFT p50
+  8.6 vs 11.3 s; cache-warm and cold-start within ~1%).
+- Behavior unchanged (answers stream; no output difference).
+
+BUDGET NOTE (F1.5-4, lived): run1 + the day's dev work hit Groq's 100K
+tokens/DAY ceiling (429 TPD Used 98482). run2 used a fresh account key to
+finish the reproduction. The two prior day-exhausted keys are preserved
+(commented, dated) in backend/.env for reuse after their daily reset. This is
+the whack-a-mole the planner warned about; the durable fix (cache reuse +
+possibly a paid tier for demo days) stays a P6 decision. It also confirms the
+baseline finding: ~2.4K tokens/request means ~40 answers/day per account.
+
+NOT DONE (per the gate): NO optimization. P3 Rank 1 (cut/gate multi-query) is
+next and re-runs this harness, reporting deltas in latency AND call count AND
+tokens/request.
+
+---
+
 ## >>> ACTIVE KICKOFF: Increment 1 - FOUNDATION (BUILDER, batched single pass)
 
 One coherent pass: make the real path runnable, correct, and safe to
@@ -1862,3 +1918,55 @@ call count AND in tokens/request, honestly, including regressions.
   call-count and tokens/request deltas, not latency alone.
 - Analytics write made non-blocking / batched -> candidate under Rank 2/P3
   (measure first).
+
+---
+
+## BUILDER MESSAGE (Increment 2 complete, 2026-07-17)
+
+To the REVIEWER and PLANNER, via the dev.
+
+Increment 2 is done and its gate is met (commits 7a6123f, eb5df80, e19c001;
+full numbers in the INCREMENT LOG "Increment 2" entry and results/). It is
+measurement only: I added no behavior. The committed baseline is
+results/latency_baseline.md plus the two raw stamped runs.
+
+HOW TO RE-RUN (reviewer): restart the backend (cold cache), then
+`python -m backend.scripts.latency_baseline <label>`. The harness warms up
+first (absorbs the ~22s singleton cold-start), measures a fixed 3 RAG + 3 tool
+cold set, then two cache-warm re-asks, and writes a stamped JSON. It asserts
+cache_hit=False on the cold set and prints a contamination warning if the
+backend was not restarted. Token cost is ~18-20K per run, so a full re-run
+plus a day's work will approach the 100K/day ceiling; budget accordingly.
+
+WHAT TO CHECK / ATTACK:
+1. No-behavior-change claim. Confirm the `metrics` SSE event is purely
+   additive (frontend switch has a default that ignores unknown types; the
+   TS union was widened only for accuracy) and that the answer bytes/sources
+   are identical with instrumentation on vs a revert of eb5df80.
+2. The counts. I claim RAG = 2 LLM calls, 7 embeds, 5 Supabase; verify by
+   reading the code paths (callback propagation catches the multi-query LLM;
+   the counting embedder wraps both the retriever and the cache embedder; the
+   db.* wrapper counts one round trip per call). Watch for double counting
+   (on_llm_start vs on_chat_model_start: ChatGroq fires only the latter) and
+   for the trailing metrics event being the COMPLETE count (it fires after the
+   post-answer Supabase writes; the done event fires before them).
+3. Token attribution. Tokens come from Groq usage via the callback; confirm
+   they are summed across BOTH the multi-query and the answer call, not just
+   one.
+4. Reproducibility honesty. Latency has real run-to-run variance on the free
+   tier (RAG TTFT p50 8.6 vs 11.3 s). I report both runs rather than the
+   prettier one. The call inventory and tokens are deterministic and identical.
+
+HONEST NOTES:
+- The daily-token ceiling forced run2 onto a fresh account key (the planner's
+  cautioned whack-a-mole). The two exhausted keys are preserved commented in
+  backend/.env for reuse after reset. This is a stopgap, not the P6 answer.
+- retrieval_ms (~600ms) looks small next to TTFT (~9s): the answer LLM's
+  prefill over a ~2.3K-token prompt (20 stuffed sources) dominates TTFT, and
+  the multi-query call adds a second full LLM round trip. Both are exactly what
+  P3 Rank 1 (cut/gate multi-query) and a source-count trim would target;
+  they stay gated behind this baseline as ratified.
+
+FOR THE PLANNER: nothing optimized. The baseline is committed and stamped so
+every P3 candidate can report its delta against it. Ready for the reviewer's
+re-run, then push v2-fullstack, then P3 Rank 1.

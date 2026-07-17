@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 from langchain.tools import tool
 
 import backend.services.database as db
-from backend.core.request_context import current_user_id
+from backend.core.request_context import current_user_id, current_user_products
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +37,20 @@ async def check_order_status(order_id: str) -> str:
             "Please double-check the order number from your confirmation email."
         )
 
+    # Increment 6 blast-radius: if the orders table carries an owner (user_id),
+    # only reveal the order to that user, so a jailbroken persona cannot read a
+    # stranger's order by guessing an ID. On the current demo schema orders have
+    # NO owner column, so this is a no-op there (documented residual risk;
+    # supabase/schema.sql adds the column, and a live migration is required
+    # before public deploy). Never confirms another user's order even exists.
+    owner = order.get("user_id")
+    if owner and owner != current_user_id.get():
+        logger.info("Blocked cross-user order access to %s", order_id)
+        return (
+            f"No order found for ID **{order_id}** on your account. "
+            "Please double-check the order number from your confirmation email."
+        )
+
     items_md = "\n".join(f"- {item}" for item in (order.get("items") or []))
     shipped = f"Shipped on **{order['shipped_on']}**" if order.get("shipped_on") else "Awaiting shipment."
 
@@ -56,16 +70,45 @@ async def check_order_status(order_id: str) -> str:
 async def check_warranty_status(serial_number: str) -> str:
     """
     Check whether a Nexora product is within its warranty period.
-    Use this when the user provides a serial number OR when their profile
-    contains a serial number for the product they are asking about.
+    Pass the PRODUCT NAME of a product the user owns (e.g. "Nexora Thermostat
+    Pro"); the system resolves their registered serial. You may also pass an
+    explicit serial number if the user provides one.
     Returns warranty status, expiry date, and whether a claim is possible.
     """
-    product = db.get_product_by_serial(serial_number.strip())
+    # Increment 6 blast-radius + prompt minimization: resolve the argument (a
+    # product name OR a serial) against the AUTHENTICATED user's own registered
+    # products, bound server-side in request context. A jailbroken model cannot
+    # check a serial the user does not own, and serials no longer live in the
+    # (leakable) system prompt. inj-02 / war-04 style cross-user serial probes
+    # are refused here rather than answered.
+    arg = (serial_number or "").strip()
+    owned = current_user_products.get() or []
+    match = None
+    for p in owned:
+        if p.get("serial_number", "").lower() == arg.lower():
+            match = p
+            break
+    if match is None:
+        for p in owned:
+            pname = p.get("product_name", "").lower()
+            if pname and arg and (arg.lower() in pname or pname in arg.lower()):
+                match = p
+                break
+    if match is None:
+        return (
+            "I can only check warranty for a product registered to your account, "
+            "and I do not see that serial or product on your profile. If you "
+            "recently purchased it, please register it first, or share the serial "
+            "printed on the device so support can verify it."
+        )
+
+    serial_number = match["serial_number"]
+    product = db.get_product_by_serial(serial_number)
 
     if not product:
         return (
-            f"No product found with serial number **{serial_number}**. "
-            "Please verify the number printed on the device or packaging."
+            f"No warranty record found for **{match.get('product_name', serial_number)}**. "
+            "Please contact support so we can look into it."
         )
 
     purchase_date: datetime = product["purchase_date"]

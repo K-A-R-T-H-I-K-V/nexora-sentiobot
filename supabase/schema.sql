@@ -130,3 +130,19 @@ insert into public.users (username, name, password_hash, owned_products) values
    '$2b$12$Qnm4VlXdXalNruxydGFbzOkYRjf6aFGLUoyX5dVrZKApG0RVsJNs2',
    '[]')
 on conflict do nothing;
+
+-- ---------------------------------------------------------------------------
+-- Increment 6 (blast-radius containment): give orders an owner so
+-- check_order_status can be scoped to the authenticated user. Without this,
+-- any logged-in user can read any order by guessing its ID. Runs after users
+-- exist (subqueries below resolve usernames -> ids). EXISTING deployments must
+-- run this migration before public deploy; the tool treats a missing user_id
+-- as "unscoped" and falls back to bearer-token-by-ID behaviour until then.
+-- ---------------------------------------------------------------------------
+alter table public.orders add column if not exists user_id uuid references public.users(id);
+create index if not exists orders_user_id_idx on public.orders(user_id);
+
+update public.orders set user_id = (select id from public.users where username = 'bob')
+  where order_id = 'NX-2025-301';        -- SecureSphere 360 Camera -> Bob
+update public.orders set user_id = (select id from public.users where username = 'alice')
+  where order_id in ('NX-2025-302', 'NX-2025-303');  -- Thermostat, LumiGlow -> Alice

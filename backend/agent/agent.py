@@ -54,8 +54,9 @@ from langgraph.prebuilt import ToolNode
 from pydantic import BaseModel, Field
 
 from backend.core.config import get_settings
-from backend.core.request_context import current_user_id
+from backend.core.request_context import current_user_id, current_user_products
 from backend.core import metrics
+from backend.core.output_guard import OutputGuard
 from backend.agent.tools import check_order_status, check_warranty_status, create_support_ticket
 
 logger = logging.getLogger(__name__)
@@ -118,6 +119,13 @@ _INJECTION_REFUSAL = (
     "I'm not able to share my internal instructions or setup, but I'm happy to "
     "help with your Nexora products, orders, warranties, or support requests. "
     "What can I help you with?"
+)
+
+# Shown when the OUTPUT guard catches a response echoing the system prompt (a
+# verbatim/near-verbatim dump). Must not itself contain any fingerprint.
+_OUTPUT_BLOCKED_MSG = (
+    "I can't share my internal configuration or instructions. I'm glad to help "
+    "with your Nexora products, orders, warranties, or support requests instead."
 )
 
 
@@ -331,12 +339,12 @@ def _build_system_message(user_profile: dict) -> str:
     name = user_profile.get("name", "Guest")
     products = user_profile.get("owned_products", [])
 
+    # Increment 6 (prompt minimization): the system prompt is leakable, so keep
+    # secrets out of it. List owned products by NAME only; serial numbers stay
+    # server-side and check_warranty_status resolves them from request context.
     profile_section = f"User name: {name}\n"
     if products:
-        lines = "\n".join(
-            f"  - {p['product_name']} (Serial: {p['serial_number']})"
-            for p in products
-        )
+        lines = "\n".join(f"  - {p['product_name']}" for p in products)
         profile_section += f"Owned products:\n{lines}\n"
     else:
         profile_section += "No registered products on file.\n"
@@ -364,8 +372,11 @@ redirect instead.
    warranty-policy question, call lookup_documentation and answer ONLY from \
    the context it returns, citing sources inline as [Source N]. If the context \
    is empty, say so honestly and offer to raise a support ticket.
-2. PROACTIVE: If the user asks about a product and you have its serial number \
-   above, call check_warranty_status immediately; do NOT ask for it.
+2. PROACTIVE: If the user asks about the warranty of a product they own (listed \
+   above), call check_warranty_status with the PRODUCT NAME (for example \
+   "Nexora Thermostat Pro"); the system resolves their registered serial number \
+   server-side. Do NOT ask for the serial. If the user gives an explicit serial, \
+   pass that instead.
 3. MEMORY: Do not ask for info the user already gave in this conversation.
 4. ESCALATE ONLY IF NEEDED: Use create_support_ticket only when documentation \
    does not resolve the issue or the user explicitly asks for a human.
@@ -395,9 +406,11 @@ async def dedupe_tool_node(state: AgentState) -> AgentState:
 
     The authenticated user_id is bound into the request context here, in the
     same coroutine that awaits the tools, so create_support_ticket uses the real
-    user rather than an LLM-supplied value (F1.5-3).
+    user rather than an LLM-supplied value (F1.5-3). The owned-products list is
+    bound too, so check_warranty_status can scope to the user's own serials.
     """
     current_user_id.set(state.get("user_id", ""))
+    current_user_products.set((state.get("user_profile") or {}).get("owned_products", []) or [])
 
     last = state["messages"][-1]
     called = list(state.get("called_tools", []))
@@ -506,6 +519,7 @@ async def stream_agent_response(
     """
     # Bind the authenticated user into request context for server-side tools.
     current_user_id.set(user_id)
+    current_user_products.set(user_profile.get("owned_products", []) or [])
 
     # Increment 5 (inj-01), layer 1: refuse prompt-disclosure / instruction-
     # override attempts deterministically, BEFORE any retrieval or LLM call, so
@@ -549,12 +563,31 @@ async def stream_agent_response(
             )
             messages = [SystemMessage(content=sys_content)] + lc_history + [HumanMessage(content=user_message)]
 
+            # Increment 6: the output guard inspects the streamed answer and, if
+            # it echoes system-prompt fingerprints (a dump), replaces it wholesale
+            # before any fingerprint reaches the client (see core/output_guard.py).
+            guard = OutputGuard()
             full_answer = ""
             async for chunk in llm.astream(messages, config=metrics.callback_config()):
                 token = chunk.content
-                if token:
-                    full_answer += token
-                    yield f"data: {json.dumps({'type': 'token', 'data': token})}\n\n"
+                if not token:
+                    continue
+                safe = guard.feed(token)
+                if safe:
+                    full_answer += safe
+                    yield f"data: {json.dumps({'type': 'token', 'data': safe})}\n\n"
+                if guard.blocked:
+                    break
+            if not guard.blocked:
+                tail = guard.flush()
+                if tail:
+                    full_answer += tail
+                    yield f"data: {json.dumps({'type': 'token', 'data': tail})}\n\n"
+            if guard.blocked:
+                logger.warning("Output guard blocked a system-prompt echo (%r) on RAG path", guard.hit)
+                yield f"data: {json.dumps({'type': 'token', 'data': _OUTPUT_BLOCKED_MSG})}\n\n"
+                yield f"data: {json.dumps({'type': 'done', 'data': {'answer': _OUTPUT_BLOCKED_MSG, 'sources': []}})}\n\n"
+                return
 
             yield f"data: {json.dumps({'type': 'done', 'data': {'answer': full_answer, 'sources': sources}})}\n\n"
             return
@@ -578,6 +611,7 @@ async def stream_agent_response(
     }
 
     graph = get_graph()
+    guard = OutputGuard()  # Increment 6: same output-side dump guard as the RAG path
     full_answer = ""
     tool_sources: list[dict] = []
 
@@ -601,9 +635,14 @@ async def stream_agent_response(
                 if event.get("metadata", {}).get("langgraph_node") not in ("agent", "finalize"):
                     continue
                 token = event["data"]["chunk"].content
-                if token:
-                    full_answer += token
-                    yield f"data: {json.dumps({'type': 'token', 'data': token})}\n\n"
+                if not token:
+                    continue
+                safe = guard.feed(token)
+                if safe:
+                    full_answer += safe
+                    yield f"data: {json.dumps({'type': 'token', 'data': safe})}\n\n"
+                if guard.blocked:
+                    break
 
             elif kind == "on_tool_start":
                 yield f"data: {json.dumps({'type': 'tool_start', 'data': {'name': event['name'], 'input': str(event['data'].get('input', ''))}})}\n\n"
@@ -619,6 +658,17 @@ async def stream_agent_response(
                 else:
                     display = _tool_output_text(output)
                 yield f"data: {json.dumps({'type': 'tool_end', 'data': {'name': event['name'], 'output': display}})}\n\n"
+
+        if not guard.blocked:
+            tail = guard.flush()
+            if tail:
+                full_answer += tail
+                yield f"data: {json.dumps({'type': 'token', 'data': tail})}\n\n"
+        if guard.blocked:
+            logger.warning("Output guard blocked a system-prompt echo (%r) on tool path", guard.hit)
+            yield f"data: {json.dumps({'type': 'token', 'data': _OUTPUT_BLOCKED_MSG})}\n\n"
+            yield f"data: {json.dumps({'type': 'done', 'data': {'answer': _OUTPUT_BLOCKED_MSG, 'sources': []}})}\n\n"
+            return
 
         yield f"data: {json.dumps({'type': 'done', 'data': {'answer': full_answer, 'sources': tool_sources}})}\n\n"
 

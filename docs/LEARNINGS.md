@@ -186,6 +186,95 @@ Worked example, the top candidate (cut or gate the multi-query retriever):
   That risk is exactly why we build the QUALITY baseline first, so the cut can
   be judged on faithfulness and hit-rate, not just speed.
 
+## Part 6 - How to think about building an evaluation (Increment 3, design-time reasoning)
+
+This section is the REASONING behind the golden-set decisions, written as the
+intuitions a senior engineer carries in their head. When you build an eval,
+these are the questions running under the surface. Read this for the "why," not
+just the "what."
+
+### Why an eval at all, and why freeze it
+Without a fixed test, "better" is only a feeling. The moment you change a
+retriever or a prompt, you need a scoreboard that did NOT move, or you cannot
+tell a real improvement from luck. Freezing the golden set BEFORE you see any
+results defends against the most human failure mode there is: quietly
+redefining "good" to match the number you happened to get. If the ruler can
+stretch, every measurement it gives you is a story you told yourself.
+
+### Why the deterministic metric is the headline and the LLM-judge is the sidekick
+There are two families of metric, and knowing which to trust is half the skill:
+- Deterministic, free, local: hit-rate@k (did a correct source land in the top
+  k?) and context precision. They use only local embeddings, cost zero tokens,
+  and give the SAME number every run. You can run them endlessly.
+- LLM-judged (RAGAS faithfulness and relevancy): you ask a model "is this
+  answer actually supported by this context?" Powerful, because they judge the
+  ANSWER and not just the retrieval, but they cost tokens, they wobble run to
+  run, and the judge has opinions.
+The intuition: anchor your headline on the metric that cannot drift, and use
+the expensive wobbly one as supporting color. If your main number needed an LLM
+to produce it, a skeptic can argue with it. If it is deterministic, they
+cannot. Lead with the number nobody can talk you out of.
+
+### The judge tradeoff: bias versus capability (a real fork with no perfect answer)
+If the SAME model writes AND grades the answer, it tends to like its own work
+(self-preference bias). So we pick a DIFFERENT model to judge. But the free
+different model (Llama 8B) is weaker than the writer (70B), and a weak judge is
+unreliable. There is no clean win: you are trading self-preference for
+judge-capability. The mature move is to pick one deliberately, NAME the
+limitation out loud in the recipe, and treat the resulting number as
+indicative rather than gospel. A great deal of senior judgment is exactly this,
+choosing the least-wrong option and being honest about what it costs you.
+
+### Why the eval runs through the REAL router, quirks and all
+We could bypass the keyword router and hand each question straight to the
+"right" path. That would flatter the system. The intuition: measure what users
+actually hit, including the blunt keyword router that sends any question
+containing "warranty" down the tool path. If the router misroutes, the eval
+should FEEL that pain, because the user does. An eval that tests an idealized
+path you do not actually ship is a comforting lie.
+
+### Multiple valid sources (avoiding false misses without going soft)
+The FAQ rows and the manuals overlap, so a question may be correctly answerable
+from either. If we demanded one exact source, we would score a genuinely
+correct retrieval as a miss. So each question carries an EXPLICIT list of
+acceptable sources, decided and frozen up front, and a hit means any of them
+appeared. The discipline that keeps this honest: "acceptable" must be an
+enumerated, frozen list per question, never a judgment made at scoring time. A
+judgment made while looking at the results is the stretchy ruler sneaking back
+in.
+
+### The time-bomb hidden in expected answers (determinism versus the clock)
+A warranty answer that says "active" depends on today's date and the tool's
+math. Freeze that as the expected answer and it silently becomes WRONG when a
+reviewer runs it next month. A frozen test must be frozen in TIME too. Two
+defenses, used together: pin a fixed "as-of" date in the recipe, and choose
+warranty cases with a wide margin (expired years ago, active for years) so they
+cannot flip near a boundary. Any expected output that secretly depends on "now"
+is a bug in the test, not a quirk to live with.
+
+### The corpus-size intuition (why more data is not obviously better right now)
+This is your own question from this increment, and it is a sharp one. Small
+corpus means easy retrieval: with only 85 sections, the right chunk is easy to
+find, so hit-rate can look wonderful for reasons that would collapse on a
+bigger, messier corpus with more distractors. More documents make the test
+HARDER and more realistic. So why not add manuals now? Because you never change
+two variables at once. We are about to freeze the corpus AND the golden set
+together and take a baseline; expanding the corpus mid-freeze would make that
+baseline meaningless, you would not know later whether a score moved because of
+your code or because the ground shifted under it. Corpus expansion is a
+deliberate, logged, re-baselined step for later, not a casual "let's add more."
+The honest handling: keep the corpus fixed for v1, and NAME the small-corpus
+caveat in the results so a strong hit-rate is never oversold.
+
+### Leakage (the quiet cheat every eval must guard against)
+If you tune chunk sizes or retriever weights while staring at the golden-set
+scores, you are secretly fitting to the test, and your number stops predicting
+real-world questions. The test set must stay unseen by the tuning process. If
+you must iterate, hold out a split you do not look at until the very end. The
+whole value of a baseline is that it is an honest stand-in for questions you
+have never seen; the moment you optimize against it directly, it stops being
+that.
+
 ## Glossary
 
 - LLM: large language model (the "writer"); here Groq Llama 3.3 70B.

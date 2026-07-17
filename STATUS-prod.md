@@ -2169,3 +2169,56 @@ Scoring split (pin this so numbers never mix):
 The builder still presents the concrete 50 for a final freeze check, but this
 distribution and the scoring split are pre-ratified so Increment 3 does not
 stall on it.
+
+---
+
+## PLANNER RATIFICATION (2026-07-17): Increment 3 recipe + corpus decision + learning-depth
+Golden set RATIFIED to freeze. All 5 recipe decisions confirmed:
+1. Deterministic primary = base ENSEMBLE (BM25+vector, k=5), NOT the multi-query
+   wrapper. CONFIRMED: zero-token, bit-stable, and it is the retriever Increment
+   4 keeps after the cut, so it is the honest before/after anchor. Also record
+   the multi-query retriever hit-rate ONCE as a reference (note its token cost).
+2. Multiple valid sources: CONFIRMED with one rigor add: each question carries
+   an EXPLICIT, frozen acceptable_sources list; a hit = any listed source in
+   top-k. "Equivalent" must be an enumerated per-item list, never a scoring-time
+   judgment (that reintroduces the stretchy ruler).
+3. RAGAS: CONFIRMED. 8 doc/policy Q, generate once, judge 2x for a variance
+   band, judge = llama-3.1-8b-instant (distinct from the 70b generator). PIN the
+   limitation: an 8b judge grading 70b output is a WEAK judge, so RAGAS is
+   SECONDARY/indicative and the deterministic metrics are the headline. Log
+   exact tokens; expand the sample later when a fresh window or paid tier allows.
+4. Keyword router as-is: CONFIRMED. The eval measures the REAL system including
+   its routing quirks; an idealized-path eval would flatter it.
+5. Adversarial scoring: CONFIRMED, with the requirement that each behavior
+   assertion be MECHANICALLY checkable (e.g. injection = response does not
+   contain the system-prompt text and does not reveal another user's serial or
+   data), not a subjective read. Reported as a separate refusal-correct %,
+   excluded from hit-rate and faithfulness.
+
+Dated-warranty flag: RESOLVED (good catch by the builder). A frozen expected
+answer that depends on "today" is not frozen. Fix BOTH ways: (a) pin a fixed
+as-of date in the recipe (2026-07-17) as the canonical assumption; (b) choose
+warranty cases with a WIDE margin (expired years ago; active for years) so
+active/expired cannot flip for a reviewer running weeks later. Drop or relabel
+any borderline case. If the tool reads datetime.now(), note the as-of
+assumption; an injectable clock is a deferred, logged later step.
+
+Corpus: KEEP AS-IS for the v1 baseline (do NOT add manuals now). Reasoning:
+never change two variables at once; we freeze the corpus AND the golden set
+together to take the baseline, so adding documents mid-freeze makes the baseline
+meaningless. Also a small corpus (85 sections) makes retrieval EASIER, so
+hit-rate can look better than on a bigger, messier corpus; NAME that
+small-corpus caveat in the results so the number is not oversold. Corpus
+expansion is a deliberate, logged, re-baselined change for later (a measured
+retrieval increment or a P7 feature), not a casual add.
+
+Learning-depth requirement (standing, per dev request): LEARNINGS.md must
+capture not just WHAT was decided but the THOUGHT PROCESS and INTUITION behind
+it: the mental model, the tradeoff weighed, what a senior engineer is thinking,
+and why the rejected options were rejected. The dev is learning to THINK, not to
+copy. Planner added LEARNINGS Part 6 (how to think about building an eval) this
+increment; builder and reviewer carry this depth forward every increment.
+
+Builder: proceed. Freeze golden_set_v1.json + the ratified recipe, run the
+deterministic metrics (free) + sampled RAGAS, commit results, append LEARNINGS.md
+(results + concepts + intuitions), then hand to the reviewer.

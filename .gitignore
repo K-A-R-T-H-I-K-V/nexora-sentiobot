@@ -17,3 +17,8 @@ backend/vector_db/
 backend/parent_docstore/
 backend/summaries/
 backend/parents.pkl
+
+# Frontend build artifacts
+frontend/node_modules/
+frontend/.next/
+frontend/out/

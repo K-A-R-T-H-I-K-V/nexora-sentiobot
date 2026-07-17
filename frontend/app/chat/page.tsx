@@ -180,6 +180,7 @@ export default function ChatPage() {
               ...m,
               content: event.data.answer || m.content,
               sources: event.data.sources,
+              interactionId: event.data.interaction_id ?? m.interactionId,
               isStreaming: false,
             };
 

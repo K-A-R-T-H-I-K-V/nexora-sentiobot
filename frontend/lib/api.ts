@@ -42,7 +42,7 @@ export type SSEEvent =
   | { type: "token"; data: string }
   | { type: "tool_start"; data: { name: string; input: string } }
   | { type: "tool_end"; data: { name: string; output: string } }
-  | { type: "done"; data: { answer: string; sources: Source[]; cached?: boolean } }
+  | { type: "done"; data: { answer: string; sources: Source[]; cached?: boolean; interaction_id?: string } }
   | { type: "error"; data: { message: string } };
 
 // ---------------------------------------------------------------------------

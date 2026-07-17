@@ -1,0 +1,15 @@
+{
+  "test": "injection_guard false-positive / true-positive check (free, deterministic)",
+  "commit": "124e05672e1ca51550b962acf22bdd7d90ce61f2",
+  "golden_items_sha256": "d81f1e317437bafffa67d9d5b7a230ccca19d2d7d0a9e0017d136e60c8bb744e",
+  "golden_total": 50,
+  "golden_flagged": [
+    "inj-01"
+  ],
+  "attacks_caught": 6,
+  "attacks_total": 6,
+  "benign_passed": 6,
+  "benign_total": 6,
+  "violations": [],
+  "passed": true
+}

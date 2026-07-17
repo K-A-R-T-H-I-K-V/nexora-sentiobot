@@ -134,6 +134,13 @@ def get_retriever():
         weights=[0.4, 0.6],  # Slightly favour semantic for general queries
     )
 
+    # Increment 4: base ensemble is the default. Multi-query (an extra LLM call
+    # per query that the baselines showed added no hit-rate here) is reversible
+    # behind USE_MULTIQUERY, so it stays A/B-able rather than deleted.
+    if not s.use_multiquery:
+        _retriever = ensemble
+        return _retriever
+
     mq_prompt = PromptTemplate.from_template(
         "Generate 3 alternative phrasings of this question for vector search. "
         "Return them separated by newlines.\nQuestion: {question}"

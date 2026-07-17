@@ -60,6 +60,12 @@ class Settings(BaseSettings):
     supabase_anon_key: str = ""
     supabase_service_role_key: str = ""
 
+    # --- Retrieval ---
+    # Increment 4: base ensemble (BM25 + vector) is the default. The multi-query
+    # retriever (extra LLM call per query) is kept behind this flag, reversible
+    # and A/B-able. Baselines showed it added no hit-rate here.
+    use_multiquery: bool = False
+
     # --- Vector / Embedding (absolute paths resolved against backend/) ---
     embedding_model: str = "all-MiniLM-L6-v2"
     vector_db_path: str = str(BASE_DIR / "vector_db")

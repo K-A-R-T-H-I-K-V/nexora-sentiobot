@@ -174,7 +174,7 @@ def main() -> int:
             "max_tokens": s.llm_max_tokens,
             "commit": commit,
             "date_utc": datetime.now(timezone.utc).isoformat(),
-            "hardware": f"{platform.system()} {platform.release()} | {platform.machine()} | py{platform.python_version()}",
+            "hardware": __import__("backend.scripts._golden", fromlist=["hardware_stamp"]).hardware_stamp(),
             "note": "TTFT/e2e are client-side over localhost; counts+tokens are server-side (trailing metrics event).",
         },
         "first_request_cold_start_ttft_ms": round(cold_start["ttft_ms"], 1) if cold_start["ttft_ms"] else None,

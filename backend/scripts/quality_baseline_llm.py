@@ -134,7 +134,8 @@ def doc_matches(md, content, acc):
 
 
 def main():
-    gold = json.load(open(REPO / "results/golden_set_v1.json", encoding="utf-8"))
+    from backend.scripts._golden import load_frozen
+    gold = load_frozen()  # asserts the frozen items hash (R3-1)
     items = gold["items"]
     tok = login()
     out_path = REPO / "results/quality_llm.json"

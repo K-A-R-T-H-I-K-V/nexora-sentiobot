@@ -65,7 +65,8 @@ def relevant_count_at_k(docs, acceptable) -> int:
 
 def main() -> int:
     label = sys.argv[1] if len(sys.argv) > 1 else "1"
-    gold = json.load(open(REPO / "results/golden_set_v1.json", encoding="utf-8"))
+    from backend.scripts._golden import load_frozen
+    gold = load_frozen()  # asserts the frozen items hash (R3-1)
     items = [it for it in gold["items"] if it.get("acceptable_sources") and "turns" not in it]
 
     retr = build_base_ensemble()

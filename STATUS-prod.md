@@ -665,6 +665,31 @@ dead credentials/infra. NEEDED FROM DEV before the reviewer can close gates
 project (apply supabase/schema.sql), with backend/.env updated. The code is
 correct and ready; only the infra is dead.
 
+STEP 3 UPDATE (live retest after the dev restored infra):
+- The dev recreated Supabase (new project, resolves + seeded via schema.sql)
+  and replaced the Google key. Live retest then found a NEW real bug:
+  passlib[bcrypt]==1.7.4 left bcrypt UNPINNED, so bcrypt 5.0.0 was installed;
+  passlib's backend init crashes on bcrypt >= 4.1 ("password cannot be longer
+  than 72 bytes"), 500ing every /auth/login. FIXED: pinned bcrypt==4.0.1
+  (commit f1c1e70), which also fixes the container. This was a real
+  demo-path bug the ground truth could not have caught (the app never booted
+  before this increment).
+- GATE 4 login: now PASS. alice/password123 -> JWT + profile (Supabase live
+  and correctly seeded, owned_products present).
+- GATE 4 chat / GATE 5 feedback: still pending ONE infra item. The replaced
+  Google key authenticates (no more API_KEY_INVALID) but its project returns
+  429 with free_tier limit: 0 for gemini-2.0-flash (the key is an "AQ."-style
+  Cloud credential, not an AI Studio "AIza" key with free-tier quota). Needs
+  a Gemini key that has quota (a fresh aistudio.google.com key, or billing).
+  Once in, chat + feedback close. Graceful failure re-confirmed: the quota
+  error surfaces as a clean SSE error event, not a crash.
+- Session hygiene (dev's machine was near-full at 98%): freed ~11 GB (pip
+  cache 7.6 GB + npm + scratch), killed orphaned dev servers, pruned Docker
+  (the completed backend image was ~13 GB due to CUDA torch, reinforcing the
+  CPU-torch P5 task). ~18 GB more sits in Docker's WSL2 vhdx and needs an
+  elevated diskpart compact (handed to the dev). backend/.env reorganized
+  into neat labeled sections (values preserved; gitignored, not committed).
+
 ---
 
 ## >>> ACTIVE KICKOFF: Increment 1 - FOUNDATION (BUILDER, batched single pass)

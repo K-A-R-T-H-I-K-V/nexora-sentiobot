@@ -8,6 +8,16 @@
   An AI-powered assistant for Nexora Electronics, built with a sophisticated, multi-stage RAG pipeline to provide accurate, context-aware answers from technical manuals and policy documents.
 </p>
 
+> **Status note (2026-07, under active rework):** This README describes the
+> original v1 (a single Streamlit app). The system is now a two-service app: a
+> FastAPI + LangGraph backend (Google Gemini 2.0 Flash, ChromaDB + BM25 hybrid
+> retrieval, Supabase for app data) and a Next.js 14 frontend. The **Tech
+> Stack**, **Setup**, **How to Run**, and **Project Structure** sections below
+> are STALE and being reworked. For the accurate architecture and the canonical
+> run command, see `STATUS-prod.md` and `SETUP.md`. Run the backend from the
+> repository root with `uvicorn backend.api.main:app`. A full, honest rewrite is
+> scheduled (P6).
+
 ---
 ## Table of Contents
 
@@ -110,12 +120,13 @@ The Streamlit app runs a stateful, reasoning agent that uses a suite of tools to
 
 ## Tech Stack
 
-  - **Framework:** Streamlit
-  - **LLM Orchestration:** LangChain
-  - **LLM:** Google Gemini 1.5 Flash
-  - **Vector Database:** ChromaDB
+  - **Backend:** FastAPI (async, SSE token streaming)
+  - **Agent / Orchestration:** LangGraph (StateGraph) + LangChain retrievers
+  - **LLM:** Google Gemini 2.0 Flash
+  - **Vector Database:** ChromaDB (hybrid with `BM25Retriever`)
   - **Embedding Model:** HuggingFace `all-MiniLM-L6-v2`
-  - **Hybrid Search:** `BM25Retriever`
+  - **App Database:** Supabase (Postgres)
+  - **Frontend:** Next.js 14 + React 18 + TypeScript + Tailwind
   - **Analytics:** Pandas
 
 ## Project Structure
@@ -142,82 +153,48 @@ nexora-sentiobot/
 ```
 
 -----
-## Setup and Installation
+## Setup and Installation (current v2, condensed)
 
-Follow these steps to get the project running on your local machine.
+> The steps below reflect the current two-service app. See `SETUP.md` for the
+> full walkthrough; a polished README rewrite lands in P6.
 
-1.  **Clone the Repository**
+1.  **Clone and enter the repo**
     ```bash
     git clone https://github.com/K-A-R-T-H-I-K-V/nexora-sentiobot.git
     cd nexora-sentiobot
     ```
 
-2.  **Create and Activate Conda Environment**
+2.  **Backend deps** (Python 3.11; a pinned `requirements.txt` is committed, do
+    NOT regenerate it)
     ```bash
-    conda create --name nexora_env python=3.10
-    conda activate nexora_env
+    python -m venv backend/venv
+    backend/venv/Scripts/activate      # Windows;  or: source backend/venv/bin/activate
+    pip install -r backend/requirements.txt
     ```
 
-3.  **Install Dependencies**
-    First, create a `requirements.txt` file by running this command in your activated environment:
+3.  **Backend env**: copy `backend/.env.example` to `backend/.env` and fill in
+    real values (Google API key, Supabase, and a `JWT_SECRET` from
+    `openssl rand -hex 32`).
+
+4.  **Build the retrieval stores** (direct mode needs no LLM API calls)
     ```bash
-    pip freeze > requirements.txt
-    ```
-    Then, for any new setup, you can install the dependencies with:
-    ```bash
-    pip install -r requirements.txt
+    python -m backend.scripts.ingest --direct
     ```
 
-4.  **Set Up Environment Variables**
-    Create a file named `.env` in the root of the project directory and add your Google API key, as well as your cohere key:
-    ```
-    GOOGLE_API_KEY="YOUR_GOOGLE_API_KEY_HERE"
-    COHERE_API_KEY="YOUR_COHERE_API_KEY_HERE"
-    ```
+## How to Run (current v2)
 
----
-## How to Run: The Full Pipeline
-
-This is a multi-stage process. You must run the ingestion pipeline first to build the necessary data stores.
-
-### Stage 1: Initial Ingestion & Summarization
-
-1.  **Run Initial Ingestion**
-    This step creates the parent documents needed by the summarizer.
-    ```bash
-    python scripts/ingest.py
-    ```
-    *(It is normal for this first run to warn that the vector store is empty.)*
-
-2.  **Generate Summaries in Batches**
-    Run this script repeatedly. Each run will process a batch of documents and then pause to respect API limits. Continue until it says "All documents have already been summarized."
-    ```bash
-    python scripts/batch_summarize.py
-    ```
-
-3.  **Run Final Ingestion**
-    Once all summaries are created, run the main ingestion script one last time. This will read the summaries and build the final vector store.
-    ```bash
-    python scripts/ingest.py
-    ```
-
-### Stage 2: Run the System
-
-The application and the dashboard run in separate processes.
-
-1.  **Launch the Chatbot Application**
-    Open a terminal, activate your environment, and run:
-
-    ```bash
-    streamlit run app.py
-    ```
-
-2.  **Launch the Analytics Dashboard**
-    Open a **second terminal**, activate the environment, and run:
-
-    ```bash
-    streamlit run dashboard.py
-    ```
+- **Backend** (from the repository root, so the `backend` package resolves):
+  ```bash
+  uvicorn backend.api.main:app --reload --port 8000
+  ```
+- **Frontend**
+  ```bash
+  cd frontend && npm install && npm run dev
+  ```
+- **Full stack in containers**
+  ```bash
+  docker compose up --build
+  ```
 
 ---
 ## Future Improvements & Roadmap
@@ -241,11 +218,9 @@ This project provides a powerful foundation. Here are some exciting directions t
 * **What:** The ultimate upgrade. Instead of storing data as unstructured text chunks, use an LLM to parse all documents into a structured knowledge graph of entities and relationships (e.g., `(LumiGlow Bulb) -[has lifespan of]-> (25,000 hours)`).
 * **Why:** This allows for much more complex, multi-hop queries that standard RAG struggles with, such as "Compare the warranty periods and lifespans of all smart light products."
 
-Of course. Your project has evolved significantly from an advanced RAG pipeline into a full-fledged, personalized AI agent. The README.md should reflect this incredible progress.
-
-I have completely rewritten and expanded your README to be highly detailed and informative, showcasing the full scope of what SentioBot can do. It now tells the complete story, from the foundational RAG architecture to the intelligent agent layer you built on top.
-
------
+> Note: this Roadmap section predates the production workstream. The live,
+> ratified plan (baselines, hardening, container/CI, deploy) lives in
+> `STATUS-prod.md`.
 
 
 

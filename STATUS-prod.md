@@ -789,6 +789,76 @@ all-MiniLM-L6-v2. Pin these in every results file.
 
 ---
 
+### Increment 1.6 - TOOL-PATH RELIABILITY (builder, 2026-07-17) - GATE MET
+
+Commits on v2-fullstack:
+- e5ab5d3 docs(status): reviewer re-review of 1.5 + planner ratification of 1.6
+  (committed the pending STATUS as instructed).
+- 8acfc2f fix(agent): tool-call dedupe + graceful finalize (F1.5-1), graceful
+  done (F1.5-2), honest escalation with real user_id (F1.5-3).
+- 28d54a5 test(agent): mock-LLM convergence guard (no real tokens).
+
+Root cause (reviewer F1.5-1, confirmed): llama-3.3-70b redundantly re-called
+the SAME tool (e.g. check_warranty_status x3), the tools returned valid results
+each time and never raised, so the loop ran until recursion_limit=8 raised
+GraphRecursionError, which F-1 turned into a generic client error. My 1.5 gate
+caught a lucky ~1-in-3 pass. Confirmed and fixed.
+
+What shipped (all MUST):
+- F1.5-1 dedupe + finalize: the prebuilt ToolNode is replaced by
+  dedupe_tool_node, which tracks executed (tool_name, args) signatures in graph
+  state and returns a nudge instead of re-running a repeat call. A round cap
+  (agent_max_tool_rounds, default 4) routes to a new finalize node that answers
+  WITHOUT tools, so the graph converges even against a model that never stops
+  calling tools. recursion_limit is now a backstop above the finalize trigger
+  (2*rounds+6), not the convergence mechanism. Streaming allowlist widened to
+  the agent AND finalize nodes.
+- F1.5-2 graceful done: a post-stream error now yields a `done` (with captured
+  sources) if an answer already streamed; only a pre-answer failure errors.
+- F1.5-3 honest escalation: create_support_ticket dropped the LLM-supplied
+  user_id; the real authenticated user_id is bound into request context inside
+  the tool node's own coroutine (bulletproof propagation) and read server-side.
+  The silent `except: pass` is gone; a persist failure returns an honest
+  failure, never a fake success.
+
+GATE (all met):
+- Mock-LLM convergence (no real Groq tokens): a fake LLM that re-emits the same
+  tool call every turn still converges to a finalized answer with the fake tool
+  executed EXACTLY ONCE. check_tool_convergence.py exit 0. This proves the
+  guarantee deterministically, independent of Groq.
+- Live Groq, the two paths the reviewer saw fail:
+  - warranty ("does my warranty cover water damage" and 2 distinct
+    cache-busted phrasings): 3/3 converged with a grounded `done`; real runs
+    called lookup_documentation + check_warranty_status and answered with 10-17
+    sources. The pre-fix 2-of-3 failure is gone; no recursion trip, no error.
+  - human-escalation (3 distinct phrasings): 3/3 converged; real runs called
+    create_support_ticket and answered. The pre-fix zero-answer failure is gone.
+  - order-status and a multi-tool query: 3/3 converged.
+  (Note: within an identical-phrasing triple, runs 2-3 were L2 cache hits;
+  the cache-busted re-run above provided the real multi-run tool-path evidence.)
+- F1.5-3 real write: support_tickets went 0 -> 2 live (escalation + multi-tool
+  each wrote a real row under alice's real UUID; the FK now satisfies).
+- Forced failure: with a deliberately invalid Groq key on a tool-path query,
+  the client received only the generic error (no 401 body, no stack trace);
+  the real error was logged server-side. F1.5-2 + F-1 hold on the graph path.
+- Byte-compile of all changed modules clean.
+
+DEFERRED (ratified "re-run once budget allows", not blocking 1.6 close):
+- Container runtime chat on 1.6 code: the image runs the same code just
+  verified locally; a rebuild + in-container smoke is recommended before push
+  (was PASS on 1.5 code).
+- Fresh-venv cold `pip install` of the new pin set (langchain-groq 0.2.5 +
+  langchain-core 0.3.63 + torch 2.10.0+cpu): still unproven in an empty venv.
+- Multi-turn cached-context (does a cached turn feed the next turn): code saves
+  the cached turn with roles, so it loads into history; a live multi-turn probe
+  is still recommended.
+These need a fresh Groq daily window (100K tokens/day is real, F1.5-4) and a
+scratch venv; flagged for the reviewer/next session, not silently dropped.
+
+NOT DONE (deliberately, per the kickoff): no latency instrumentation.
+
+---
+
 ## >>> ACTIVE KICKOFF: Increment 1 - FOUNDATION (BUILDER, batched single pass)
 
 One coherent pass: make the real path runnable, correct, and safe to
@@ -1545,3 +1615,59 @@ Increment 2 (P1 latency baseline on Groq, token-budgeted).
 - Model routing / alternate tool model -> P3 measured experiment (Rank 3),
   only after baselines.
 - Groq 100K tokens/day -> hard constraint on P2 eval design and P6 demo.
+
+---
+
+## BUILDER MESSAGE (Increment 1.6 complete, 2026-07-17)
+
+To the next REVIEWER and the PLANNER, via the dev.
+
+Increment 1.6 is done and its gate is met (commits e5ab5d3, 8acfc2f, 28d54a5;
+detail in the INCREMENT LOG "Increment 1.6" entry). You were right that 1.5's
+"tool route works" was a lucky ~1-in-3 pass; I reproduced the loop and fixed
+the root cause rather than raising the cap.
+
+The fix has TWO independent guarantees, on purpose:
+1. dedupe_tool_node skips re-executing an identical (tool, args) call and nudges
+   the model to answer;
+2. a round cap routes to a finalize node that answers WITHOUT tools, so even a
+   model that ignores the nudge and loops forever still converges.
+The mock-LLM test (check_tool_convergence.py) proves guarantee 2 deterministically
+with an adversarial always-looping fake model and zero Groq tokens; please run
+it first, then spend real tokens only on the live paths.
+
+WHERE TO ATTACK:
+1. Convergence under REAL Groq, not the cache. Note: an identical repeated query
+   is served by the L2 semantic cache (tools=[]), which does NOT exercise the
+   tool loop. Use DISTINCT phrasings (as I did in the cache-busted re-run) or a
+   fresh user to force real executions, or you will "verify" a cache hit. I got
+   3/3 real convergence on warranty and escalation; push harder on multi-tool
+   chains that legitimately need 3+ DIFFERENT tool calls (those are the ones the
+   round cap could cut off early). If the finalize node fires before a genuinely
+   needed tool ran, the answer will be under-informed but still grounded/clean;
+   judge whether max_tool_rounds=4 is high enough for the corpus.
+2. F1.5-3 honesty. Force a persist failure (e.g. break the FK or the Supabase
+   creds) and confirm the user gets an honest failure, NOT a fake ticket id.
+   Confirm the real user_id (not a name) lands in support_tickets.user_id.
+3. F1.5-2. Try to make a full streamed answer flip to an error; it should now
+   land as a `done` with sources. And confirm a pre-answer failure still errors
+   cleanly (verified for a bad key on the tool path).
+4. The request-context user_id. I set the ContextVar inside the tool node's own
+   coroutine so propagation is not at the mercy of langgraph task copying;
+   sanity-check that concurrent requests cannot cross user_ids (I believe
+   ContextVar per-task isolation holds, but it is worth a concurrent probe).
+
+HONEST GAPS (ratified as "re-run once budget allows", NOT closed):
+- Container chat on 1.6 code, fresh-venv cold install of the pin set, and a live
+  multi-turn cached-context probe are all still pending a fresh Groq daily
+  window. The 100K tokens/day ceiling (F1.5-4) is real; my live battery plus the
+  reviewer's earlier one make budget the binding constraint, not code.
+- google-genai still unpinned (N-3); Nexora-Assets.zip still bloats the lineage.
+
+FOR THE PLANNER: nothing here touches latency instrumentation or the retriever
+weights; the tool path is now honestly green on the paths tested. When the tool
+route is signed off, the branch is ready to push and Increment 2 (P1 latency on
+Groq, token-budgeted) can start. One measured lever became more attractive under
+F1.5-4: cutting/gating MultiQuery and trimming retrieved-source count would
+roughly multiply daily demo capacity, but it stays behind the P1/P2 baseline as
+ratified.

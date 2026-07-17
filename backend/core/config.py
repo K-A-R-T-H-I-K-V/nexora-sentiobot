@@ -54,6 +54,13 @@ class Settings(BaseSettings):
     # This, together with tool-call dedupe, makes the tool path converge instead
     # of looping on repeated calls and burning the Groq free-tier daily quota.
     agent_max_tool_rounds: int = 4
+    # Increment 5 resilience: a bounded wait on each provider call plus a few
+    # retries. The provider SDK applies exponential backoff between retries, so a
+    # transient 429/5xx or a slow hop is retried, and a hung socket cannot stall
+    # a request forever (it times out and surfaces the generic failure message).
+    llm_timeout_seconds: float = 30.0
+    llm_max_retries: int = 2
+    retrieval_timeout_seconds: float = 20.0
 
     # --- Supabase ---
     supabase_url: str = ""
@@ -79,7 +86,14 @@ class Settings(BaseSettings):
     cache_ttl_seconds: int = 3600  # 1 hour for identical queries
     semantic_cache_threshold: float = 0.92
 
-    # --- Rate limiting (field present; limiter not yet wired, see FORWARD TASKS) ---
+    # --- Request guards (Increment 5: cost + abuse) ---
+    # Reject over-long messages BEFORE any retrieval/LLM work, so a giant paste
+    # cannot burn tokens or stall the box. ~8k chars is roughly 2k tokens, ample
+    # for a support question; the output side is capped by llm_max_tokens.
+    max_input_chars: int = 8000
+    # Per-user request ceiling on the expensive /chat/stream endpoint, enforced
+    # in-process (per worker; a globally-correct limit needs a shared store, the
+    # same L1/L2 vs L3 tradeoff as the cache). Set 0 to disable.
     rate_limit_per_minute: int = 20
 
     model_config = SettingsConfigDict(

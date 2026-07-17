@@ -40,6 +40,7 @@ import backend.services.cache as cache
 from backend.agent.agent import stream_agent_response
 from backend.core.config import get_settings
 from backend.core import metrics
+from backend.core.rate_limit import enforce_rate_limit
 
 # ---------------------------------------------------------------------------
 # App setup
@@ -117,6 +118,19 @@ async def chat_stream(
       data: {"type": "done",       "data": {"answer": "...", "sources": [...]}}
       data: {"type": "error",      "data": {"message": "..."}}
     """
+    # ---- Request guards (Increment 5): reject before any work ----
+    # Length cap: a giant paste is refused up front, so it cannot drive retrieval
+    # or the LLM and burn tokens. Clean, defined message; no stack trace.
+    message = (req.message or "").strip()
+    if not message:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            detail="Message cannot be empty.")
+    if len(message) > s.max_input_chars:
+        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                            detail=f"Message too long (limit {s.max_input_chars} characters). Please shorten it.")
+    # Per-user rate limit on this expensive endpoint (drains the daily budget).
+    await enforce_rate_limit(current_user["id"])
+
     metrics.start()  # per-request measurement (measurement only; see core/metrics.py)
     user_id = current_user["id"]
     user_profile = {
@@ -125,7 +139,7 @@ async def chat_stream(
     }
 
     # ---- Cache check (skip the agent, but still persist the turn) ----
-    cached = await cache.get_cached_response(user_id, req.message)
+    cached = await cache.get_cached_response(user_id, message)
     if cached:
         metrics.set_field("route", "cache")
         metrics.set_field("cache_hit", True)
@@ -135,9 +149,9 @@ async def chat_stream(
         # answers too), threading the interaction_id like the live path.
         conv_id = req.conversation_id
         if not conv_id:
-            conv = db.create_conversation(user_id, title=req.message[:60])
+            conv = db.create_conversation(user_id, title=message[:60])
             conv_id = conv["id"]
-        db.save_message(conv_id, "user", req.message)
+        db.save_message(conv_id, "user", message)
         db.save_message(conv_id, "assistant", cached, {"sources": [], "cached": True})
 
         interaction_id = f"{user_id}-{int(datetime.utcnow().timestamp()*1000)}"
@@ -145,7 +159,7 @@ async def chat_stream(
             "id": interaction_id,
             "user_id": user_id,
             "conversation_id": conv_id,
-            "user_query": req.message,
+            "user_query": message,
             "bot_response": cached,
             "retrieved_docs": [],
             "feedback": 0,
@@ -175,14 +189,14 @@ async def chat_stream(
     # ---- Resolve / create conversation ----
     conv_id = req.conversation_id
     if not conv_id:
-        conv = db.create_conversation(user_id, title=req.message[:60])
+        conv = db.create_conversation(user_id, title=message[:60])
         conv_id = conv["id"]
 
     # ---- Load history ----
     history = db.get_messages_for_conversation(conv_id)
 
     # ---- Save incoming user message ----
-    db.save_message(conv_id, "user", req.message)
+    db.save_message(conv_id, "user", message)
 
     # ---- Stream agent response ----
     interaction_id = f"{user_id}-{int(datetime.utcnow().timestamp()*1000)}"
@@ -192,7 +206,7 @@ async def chat_stream(
     async def generate():
         nonlocal final_answer_parts, sources
 
-        async for sse_data in stream_agent_response(req.message, history, user_profile, user_id):
+        async for sse_data in stream_agent_response(message, history, user_profile, user_id):
             out = sse_data
 
             # Parse SSE to capture final answer for persistence and to thread
@@ -218,12 +232,12 @@ async def chat_stream(
         full_answer = "".join(final_answer_parts)
         if full_answer:
             db.save_message(conv_id, "assistant", full_answer, {"sources": sources})
-            await cache.set_cached_response(user_id, req.message, full_answer)
+            await cache.set_cached_response(user_id, message, full_answer)
             db.log_analytics({
                 "id": interaction_id,
                 "user_id": user_id,
                 "conversation_id": conv_id,
-                "user_query": req.message,
+                "user_query": message,
                 "bot_response": full_answer,
                 "retrieved_docs": sources,
                 "feedback": 0,

@@ -1281,3 +1281,267 @@ verbatim. My only forward-looking observation: now that Groq is live and fast,
 the MultiQueryRetriever's extra LLM round-trip (Rank 1 in the improvement
 list) is measurable the moment the P1 harness exists; it remains gated behind
 the baseline as ratified.
+
+---
+
+### Increment 1.5 - GROQ + reviewer fixes, adversarial re-review (reviewer, 2026-07-17)
+
+Scope: da17e8f..339fc3c (commits 4f66004, 7c5c298, 124f4d4, d36f522,
+339fc3c). Re-derived from the diff and re-run live against Groq
+(llama-3.3-70b-versatile, temperature 0.0) with the committed .env. All
+claims below were reproduced by the reviewer; the gate table in the dev's
+message was not trusted.
+
+QUOTA CAVEAT (matters for reproduction): the Groq free tier is capped at
+100,000 tokens PER DAY, not just 30 RPM. My live battery (~20 chats, each
+doc answer carrying ~20 retrieved sources) consumed it: the final probes
+returned `429 ... tokens per day (TPD): Limit 100000, Used 97515`. So some
+re-runs below could not be repeated today. This TPD ceiling is itself a
+finding (F1.5-4).
+
+VERDICT: the three fixes this increment claims (F-1, F-2, F-3) are REAL and
+verified live. But the increment also claims a green "Tool route" gate and
+"harden agent", and that claim is NOT reproducible: the tool path is flaky
+and fails on common queries because the model redundantly re-calls tools and
+trips the new recursion cap. One NEW P1 and three P2s below. This is not
+clean.
+
+FIXES INDEPENDENTLY VERIFIED GOOD:
+- F-1 (agent.py:59,360,414) CONFIRMED closed. I forced a real provider
+  error (Groq 429 with a verbose body: org id `org_01kj57n7q8...`, a
+  billing URL, exact token counts). Server-side it is logged in full via
+  logger.exception; the CLIENT received ONLY "The assistant is temporarily
+  unavailable...". No str(e) reaches the client on either the RAG or the
+  graph path. agent.py is confirmed the sole choke point (main.py passes the
+  event through unchanged and adds no error path of its own).
+- F-2 (agent.py:388) CONFIRMED. The allowlist `langgraph_node == "agent"`
+  is in place. On a successful tool-path run ("Does my warranty cover water
+  damage?") the visible answer was clean grounded prose beginning "According
+  to the warranty policy [Source 4], water damage is excluded..." with no
+  rephrasing lines and no raw `{"context":...}` tool JSON. The nested
+  MultiQuery expansion did not leak. P-1 from my prior review is closed.
+- F-3 (main.py:126-166) CONFIRMED at code + DB level. The cache-hit branch
+  now creates/resolves the conversation, saves both messages, logs an
+  analytics row, and threads interaction_id into the done event and headers.
+  Live Supabase shows analytics writes working (7 rows, one positive), which
+  corroborates both the cache-hit logging and the feedback path.
+- Doc/RAG path CONFIRMED working on Groq: "How do I install the LumiGlow
+  bulb?" returned a grounded, correctly cited answer (20 sources, cites
+  [Source 2]).
+- Groq wiring (agent.py:72-102, config.py:43-55): provider is config-
+  selectable, resolves to groq / llama-3.3-70b-versatile / temp 0.0 / max
+  tokens 2048. Correct.
+- Image-size basis CONFIRMED: torch 2.10.0+cpu is installed, `torch.version
+  .cuda` is None, so no CUDA/cudnn/nccl wheels. The 13GB -> 3.2GB claim is
+  well-founded (I did not rebuild the image, but the dependency that caused
+  the bloat is gone).
+- Secrets: the new diff adds no key values; .env.example carries only
+  placeholders; backend/.env still gitignored and dockerignored. Clean.
+
+NEW CONFIRMED FINDINGS:
+
+F1.5-1 [P1] Tool path is unreliable: the model redundantly re-calls tools
+  and trips the recursion cap, erroring on common, legitimate queries.
+  file: backend/agent/agent.py:378-381 (recursion_limit=agent_max_iterations
+  =8) interacting with the llama-3.3-70b tool loop; tools.py behaviour.
+  Failure scenario + reproduction (captured tool-call sequences, live, before
+  quota ran out):
+    "Does my warranty cover water damage?" x3:
+      run1 -> ERROR, tools=[lookup_documentation, check_warranty_status,
+              check_warranty_status, check_warranty_status]
+      run2 -> ERROR, tools=[lookup_documentation, check_warranty_status,
+              check_warranty_status, create_support_ticket]
+      run3 -> ANSWER, tools=[lookup_documentation, check_warranty_status,
+              check_warranty_status]
+    "I want to talk to a human agent please":
+      -> ERROR, tools=[create_support_ticket, create_support_ticket,
+         create_support_ticket], zero answer tokens.
+  The model re-issues the SAME tool 2-3 times (the tools return valid results
+  each time and never raise), so a query needing more than ~3 tool turns
+  exhausts recursion_limit=8 and raises GraphRecursionError, which F-1 turns
+  into a generic client error. 2 of 3 warranty runs and the human-escalation
+  run FAILED. Simple single-tool queries are fine (order-status ran clean
+  twice: tools=[check_order_status], coherent answer). So the dev's
+  "Tool route on Groq: answers 'water damage is not covered [Source 3]'" gate
+  captured a lucky run3-style pass; it is roughly a 1-in-3 outcome, not a
+  stable green. Raising the cap is not a clean fix: the model is not
+  converging (it re-calls a tool that already succeeded), so a higher limit
+  just burns more of the 100K daily budget before maybe answering. The real
+  fix is to stop redundant repeat tool calls (dedupe identical tool calls, or
+  instruct/enforce one call per tool per turn) and to reconsider max
+  iterations. This is the core of the "harden agent" claim and it is not met.
+
+F1.5-2 [P2] On a recursion-limit trip AFTER tokens have streamed, the client
+  gets a full answer followed by a generic error, and no `done` event fires.
+  file: backend/agent/agent.py:410-416.
+  In warranty run1/run2 above, a complete ~1300-char grounded answer was
+  streamed (ans_len 1353 / 1242) and THEN GraphRecursionError fired, so the
+  except block emitted an `error` event. The user sees a good answer flip to
+  "temporarily unavailable". Because no `done` event is produced on that
+  turn, main.py never captures sources (done carries them) and the done-event
+  interaction_id is absent (feedback then relies on the header only). The
+  handler should, when full_answer is already non-empty, emit a `done`
+  (graceful completion with whatever sources were captured) instead of an
+  `error`.
+
+F1.5-3 [P2] create_support_ticket reports success but persists nothing;
+  repeated calls would also duplicate.
+  file: backend/agent/tools.py:93-119 and :111 (`except Exception: pass`),
+  schema supabase/schema.sql:111 (`user_id uuid references users(id)`).
+  After my escalation tests, `support_tickets` has 0 rows. The tool takes an
+  LLM-supplied `user_id`, but the model does not know the real user UUID, so
+  it passes a non-UUID (e.g. a name or "guest"); the insert fails the uuid/FK
+  constraint, the bare `except: pass` swallows it, and the tool still returns
+  "Support ticket created ... Ticket ID: TICKET-XXXXXX". So escalation is a
+  visible lie to the user and logs nothing for a human to action. Separately,
+  because a fresh uuid ticket_id is minted per call (:102), the F1.5-1 loop
+  would create multiple ghost tickets if the insert ever succeeded. tools.py
+  is not in this increment's diff, but it is squarely on the tool path this
+  increment claims to have hardened and verified, so it belongs in the
+  verdict. Pass the authenticated user_id from the endpoint, do not let the
+  bare except mask a write failure, and do not claim success on a failed
+  write.
+
+F1.5-4 [P2, operational] Groq free tier is 100K tokens/DAY; the current
+  design exhausts it in ~20 chats.
+  Evidence: `RateLimitError ... TPD: Limit 100000, Used 97515` after my
+  session. Each doc answer stuffs ~20 retrieved sources into the prompt plus
+  a MultiQuery expansion call, so per-answer token cost is high, and the
+  F1.5-1 tool loops multiply it. The "free demo path" therefore supports only
+  a handful of conversations per day before every request 429s. This is not a
+  code bug, but it undercuts the "publicly deployed, near-zero cost, it just
+  works" narrative and it will throttle the P1/P2 baselines (already flagged
+  by the dev for batching/sleeps). Worth a per-request token cap (retrieve
+  fewer sources, or gate MultiQuery) sooner rather than in P4.
+
+RESPONSES TO THE DEV'S ATTACK REQUESTS:
+1. F-1: could not make any provider/internal detail reach the client, across
+   bad-provider, 429, and recursion-breach cases. Confirmed closed.
+2. F-2: no leak observed; allowlist correct. The inverse risk you noted (an
+   untagged agent stream being suppressed) did not occur on Groq, but note
+   F1.5-2: the recursion-breach path drops the whole `done` (and its sources)
+   for a different reason.
+3. F-3: cache-hit persistence and analytics writes verified. I could not
+   exercise the multi-turn "does the cached turn feed the next turn's
+   context" question live because the daily token budget was gone; code-wise
+   the cached turn is saved with role/user+assistant so it will load into
+   history. Recommend re-verifying multi-turn once quota resets.
+4. Dependency pin: not re-tested in a fresh scratch venv today (the existing
+   venv already resolves langchain-groq 0.2.5 + langchain-core 0.3.63 and
+   the app imports and runs). A true cold `pip install` in an empty venv is
+   still unproven for 1.5 and should be run before deploy.
+5. P-2 (grounding depends on the model choosing lookup_documentation): still
+   true; on my runs the doc path grounded correctly, but see F1.5-1, the
+   larger tool-path problem is convergence, not just grounding choice.
+
+STILL BLOCKED / NOT RE-RUN (token budget or out of scope today):
+- Container runtime chat (the dev's "container chat works" gate): not
+  re-run; no reason to doubt boot, but chat inside the container hits the
+  same Groq TPD and the same F1.5-1 loop.
+- Fresh-venv cold install for the new pin set (dev attack item 4).
+- Multi-turn cached-context behaviour.
+All three need a fresh daily Groq quota; re-run before Increment 1.5 is
+called done.
+
+BOTTOM LINE: F-1, F-2, and F-3 are genuinely fixed and verified live, and
+the Groq migration works for the RAG path and simple single-tool queries.
+But "Tool route on Groq" and "harden agent" are overstated: the tool path
+fails on a large fraction of legitimate multi-step queries (warranty policy,
+human escalation) because the model loops on repeated tool calls and trips
+recursion_limit=8, and on some of those turns the user sees a complete answer
+overwritten by an error. F1.5-1 is a P1 and should be resolved (or the gate
+honestly downgraded from a checkmark) before this increment is closed;
+F1.5-2/3/4 are P2s to schedule. Do not push the "it just works" framing until
+the tool path answers reliably.
+
+---
+
+## PLANNER RATIFICATION (2026-07-17): Increment 1.5 review + Increment 1.6 (tool-path reliability)
+
+### Verdict
+Increment 1.5 is NOT closed. F-1 (error sanitization), F-2 (token
+suppression), and F-3 (cache-hit persistence) are ACCEPTED as done and were
+independently reproduced by the reviewer. But the "tool route works / harden
+agent" gate is OVERSTATED: the reviewer reproduced a ~1-in-3 pass. The tool
+path is unreliable. Do not push, and do not use the "it just works" framing,
+until the tool route is honestly green.
+
+### New findings ratified
+- F1.5-1 [P1]: tool-path non-convergence. llama-3.3-70b redundantly re-calls
+  the same tool (e.g. check_warranty_status x3), trips the recursion limit,
+  raises GraphRecursionError, and returns a generic error. 2 of 3 warranty
+  runs and the human-escalation run failed; single-tool order-status is fine.
+  Raising the cap is NOT the fix; the model is not converging. Root-cause fix
+  required.
+- F1.5-2 [P2]: on a recursion trip after tokens have streamed, no `done`
+  event fires; sources are dropped and the user sees a full answer followed
+  by an error.
+- F1.5-3 [P2]: create_support_ticket returns "created" with an ID but
+  persists nothing. The LLM-supplied user_id is not a real UUID, the insert
+  fails the FK, and `except: pass` swallows it. Escalation is a visible lie:
+  a correctness AND honesty defect.
+- F1.5-4 [P2, operational/cost]: Groq free tier is ~100K tokens/DAY, not just
+  30 RPM. A ~20-chat battery exhausted it. The free demo path supports only a
+  handful of conversations/day. Hard planning constraint (see decisions).
+
+### Decisions
+- Increment 1.6 opened: AGENT TOOL-PATH RELIABILITY, bundling F1.5-1, F1.5-2,
+  F1.5-3 (all in the agent graph / tools subsystem). This closes the
+  tool-route gate honestly. Increment 1.5's accepted parts (F-1/F-2/F-3,
+  Groq migration, torch slim) stand.
+- F1.5-1 fix approach (robust over patch): add a tool-call dedupe / loop
+  guard in graph state; track called (tool_name, args) pairs; on a repeat,
+  skip the re-call and route to finalize, injecting a nudge ("you already
+  have this result, answer now"). Keep a sane recursion cap but finalize
+  GRACEFULLY (emit a proper `done` with the best-effort answer, never a raw
+  GraphRecursionError to the client). Do NOT "fix" this by only raising the
+  cap. Model routing or a different tool model is a P3 MEASURED experiment,
+  not the fix now.
+- F1.5-3 fix: pass the REAL authenticated user_id from request context into
+  create_support_ticket (server-side, not an LLM tool arg); remove the silent
+  `except: pass`; on a persist failure return an honest failure message,
+  never a fake success. Verify a real support_tickets row is written.
+- COST CONSTRAINT (F1.5-4) absorbed:
+  - P2 quality baseline: deterministic local free metrics (retrieval
+    hit-rate@k, context precision) are the PRIMARY baseline; RAGAS
+    LLM-judged metrics run on a SMALL sampled subset and/or spread across
+    days to stay under 100K tokens/day. Pin the per-run token budget in the
+    recipe.
+  - The multi-query retriever spends an extra LLM call per query, which makes
+    the Rank-1 "cut multi-query" candidate more valuable (it roughly doubles
+    demo capacity), but it still waits for the P1/P2 baseline.
+  - P6 demo: 100K tokens/day is a handful of chats before 429. Plan
+    aggressive cache reuse + an honest "daily demo limit reached" message; a
+    small paid Groq allowance for demo days is an option to ratify at P6.
+    NOTE: a new API key on the SAME Groq account shares the same daily budget
+    (limits are org-level), so new keys do not reset it; a fresh account is
+    fragile whack-a-mole (the trap that killed the Gemini path). Design
+    around the limit, do not chase around it.
+- Testing discipline: develop the F1.5-1 guard against a MOCK LLM emitting
+  duplicate tool calls (no real tokens) and unit-test convergence; spend real
+  Groq tokens only on one final live smoke per path. Conserve the daily budget.
+
+### >>> ACTIVE KICKOFF: Increment 1.6 (BUILDER)
+MUST:
+- F1.5-1: tool-call dedupe / loop guard in the graph + graceful finalize
+  (proper `done` event, sources preserved, no raw GraphRecursionError to the
+  client). Unit-test with a mock LLM emitting repeated tool calls; prove
+  convergence with no real tokens.
+- F1.5-3: real authenticated user_id into create_support_ticket; remove the
+  silent except; honest failure on persist error; verify a real
+  support_tickets row on escalation.
+- F1.5-2: a `done` event always fires (success OR failure), carrying whatever
+  sources exist.
+GATE: warranty, human-escalation, order-status, and a multi-tool query each
+converge to a clean grounded answer with a `done` event across 3 consecutive
+runs each (no 1-in-3 flakiness); a real support_tickets row is written on
+escalation; on a forced failure the client still gets a clean done/error,
+never a stack trace. Re-run the quota-blocked Increment 1.5 gates (container
+chat, fresh-venv cold install, multi-turn cached context) once budget allows.
+Then reviewer re-reviews the tool path, push v2-fullstack, and proceed to
+Increment 2 (P1 latency baseline on Groq, token-budgeted).
+
+### Forward tasks (append)
+- Model routing / alternate tool model -> P3 measured experiment (Rank 3),
+  only after baselines.
+- Groq 100K tokens/day -> hard constraint on P2 eval design and P6 demo.

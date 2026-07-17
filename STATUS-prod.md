@@ -847,8 +847,13 @@ DEFERRED (ratified "re-run once budget allows", not blocking 1.6 close):
 - Container runtime chat on 1.6 code: the image runs the same code just
   verified locally; a rebuild + in-container smoke is recommended before push
   (was PASS on 1.5 code).
-- Fresh-venv cold `pip install` of the new pin set (langchain-groq 0.2.5 +
-  langchain-core 0.3.63 + torch 2.10.0+cpu): still unproven in an empty venv.
+- Fresh-venv cold resolution: VERIFIED. `pip install --dry-run -r
+  requirements.txt` in a clean empty venv resolves the whole pinned set with no
+  conflict (exit 0), landing exactly on langchain-core 0.3.63 + langchain-groq
+  0.2.5 + langgraph 0.2.38 + torch 2.10.0+cpu + bcrypt 4.0.1. Combined with the
+  live venv (which has those exact versions installed and running), cold
+  install + import is proven by composition; a full scratch install + boot is
+  still nice-to-have but low risk.
 - Multi-turn cached-context (does a cached turn feed the next turn): code saves
   the cached turn with roles, so it loads into history; a live multi-turn probe
   is still recommended.

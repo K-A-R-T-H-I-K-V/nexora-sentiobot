@@ -425,3 +425,57 @@ that.
 - RAGAS / faithfulness / hit-rate@k: an eval toolkit and its metrics;
   faithfulness = is the answer supported by the retrieved context; hit-rate@k =
   did the right source appear in the top k results.
+
+## Part 7 - Signal vs noise: how to trust a metric (Increment 4, the trust question)
+
+The honest reaction to Increment 4 was "one of the numbers turned out to be
+noise, so how do I trust any of them?" This is the most important question in
+the whole project, so here is the real answer.
+
+Trust does not come from numbers being perfect. Perfect numbers do not exist,
+not here and not at any company. Trust comes from a PROCESS that sorts the
+numbers you can trust from the ones you cannot, and then builds claims only on
+the first kind. A trustworthy process, not flawless data, is the whole game.
+
+There are three grades of metric, and you treat each differently:
+
+1. Deterministic (trust it, headline it). Reproduces bit-for-bit on a re-run.
+   Here: LLM-call count 2 -> 1 (a hard integer, verified on all 5 questions),
+   tokens/answer -53% (verified per row), retrieval hit@5 0.913 (reproduced
+   byte-identical twice, across two increments). If it reproduces exactly, it is
+   signal.
+
+2. Noisy-but-bounded (caveat it, never headline it raw). Wobbles run to run for
+   reasons outside your code. Here: latency on free-tier Groq (server load
+   swings an answer from 1s to 13s) and the weak-8b judge's faithfulness score.
+   Report these WITH their variance and a plain label ("indicative, not
+   attributable"); never as a clean win. We pre-declared both as unreliable back
+   in Increments 2 and 3, so the wobble was expected, not a betrayal.
+
+3. Manufactured (kill it). A noisy number dressed up as a clean one. That is
+   what "-68% generation time" was: a mean dragged down by two slow free-tier
+   outliers in the before arm, presented as if the cut caused it. Per question
+   the sign even flipped. The reviewer caught it; the fix is to delete it.
+
+Why trust the Increment 4 result at all, then? Because the WIN lives entirely in
+grade 1 (one fewer LLM call, half the tokens, identical retrieval, answer
+quality confirmed by a HUMAN reading the actual answers, not by the flaky
+judge). The NOISE lives entirely in grades 2 and 3, and we refuse to claim it.
+Separating them is not a weakness in the result; it IS the result.
+
+Two things made it trustworthy, both worth internalizing:
+- Independent replication. The reviewer did not read the builder's table and
+  nod; it re-ran the deterministic parts and re-derived every row. A claim that
+  survives someone actively trying to break it is worth more than one nobody
+  checked. The -68% did not survive; the token and call-count wins did.
+- Honest disclosure over a flattering summary. The committed artifact stated the
+  scary faithfulness drop (0.81 -> 0.55) and argued item by item that it was
+  judge noise, which a human then verified by reading the answers. A handoff
+  summary that quietly dropped that line was corrected, because the reviewer
+  reviews the ARTIFACT, not the summary. Never sand the inconvenient number off
+  the summary; that number is where trust is won or lost.
+
+The takeaway for any project: do not ask "is this number right?" Ask "is it
+reproducible, was it checked by someone trying to break it, and is the
+inconvenient version of it stated out loud?" Yes on all three, trust it. No,
+caveat it or kill it. That discipline is what "trustworthy metrics" means.

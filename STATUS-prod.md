@@ -2505,3 +2505,164 @@ caveat; retrieval hit-rate unchanged AND answer check shows no material
 faithfulness regression; multi-query still togglable; freeze hash in place;
 stamp fixed; LEARNINGS appended. Reviewer re-runs the delta. Then P4 hardening
 (anchor: the inj-01 fix).
+
+---
+
+### Increment 4 - CUT MULTI-QUERY (first optimization), adversarial review (reviewer, 2026-07-18)
+
+Scope: 4486899..842e50a (cut + eval locks 91fe504, delta 842e50a). Re-derived
+from the diff and re-run. This is the first optimization, so the bar is: is the
+win real and correctly attributed, and did quality actually hold.
+
+VERDICT: SHIP IT, with one reporting correction. The cut is implemented
+correctly, ships by default, and is cleanly reversible. My two Increment 3
+findings (R3-1 freeze hash, R3-2 stamp) are both properly fixed and I verified
+the freeze lock actually trips on tampering. The headline wins that matter
+(one fewer LLM call, half the tokens, retrieval time gone, hit@5 unchanged) are
+REAL and I reproduced the deterministic ones. Quality genuinely held: I read the
+after-answers and confirmed the faithfulness "drop" is weak-judge noise, exactly
+as the committed delta.md argues. The one real problem is a single overclaimed
+row in the delta table (generation time), below.
+
+VERIFIED (re-ran, did not read):
+- The cut ships. get_retriever() with the default use_multiquery=False returns a
+  plain EnsembleRetriever (I instantiated it: type is EnsembleRetriever, not
+  MultiQuery), so production now retrieves on the base ensemble. The change is
+  minimal (early return of the ensemble) and reversible behind USE_MULTIQUERY;
+  multi-query is retained, not deleted. .env does not enable it, so the shipped
+  default is the cut.
+- R3-1 FIXED and enforced: _golden.load_frozen() recomputes SHA256 of items[]
+  and both eval harnesses call it. The committed items_sha256 matches the
+  current set, and I confirmed a one-word edit to any item changes the hash, so
+  the guard would raise. A silent edit to the frozen set is now auto-detected.
+- R3-2 FIXED: hardware_stamp() now reports "Windows 11 (build 10.0.26200)"
+  instead of the old "Windows 10" quirk.
+- Retrieval hit@5 identical, reproduced: I re-ran the deterministic harness
+  (now behind the freeze lock) TWICE. Both are byte-identical to the committed
+  Increment 3 baseline: hit@5 0.913, misses [doc-01, doc-13]. "0.913 -> 0.913"
+  is true.
+- The deterministic delta is real per-row (from results/increment4_delta.json):
+  LLM calls 2 -> 1 on all 5 questions; tokens down on all 5 (e.g. 3777 -> 1533,
+  2929 -> 1198); retrieval time ~800 ms -> ~45 ms on all 5. The -53% tokens
+  come from two real effects of the cut: no expansion LLM call, and the base
+  ensemble returning far fewer docs (before 15-21 sources, after 6-9) so the
+  answer prompt is smaller. Both are legitimate. The ~2x daily-capacity claim
+  follows directly from -53% tokens; fair.
+- Quality HELD, independently confirmed. I read the two after-answers the weak
+  judge scored 0.0 (doc-12, pol-02). Both are accurate, grounded, and cite
+  sources (doc-12: "weather-resistant (IP65 rated), not fully waterproof, do not
+  submerge"; pol-02: "warranty explicitly excludes water/flood damage [Source
+  4]"). They are as good as or better than the before-answers. The 0.0 scores
+  are weak-8b-judge errors, the same failure mode disclosed for doc-14 in
+  Increment 3. The committed delta.md says exactly this, item by item, and even
+  flags that the fact-substring check (2/4) mis-matched on 'LED' and '(IP65)'
+  (punctuation false-negatives, which I confirmed). The delta.md is honest and
+  its "quality held" conclusion is correct.
+
+FINDING:
+
+R4-1 [P3] The "Generation time -68%" row is not a real, attributable delta and
+  should be dropped or relabeled.
+  file: results/increment4_delta.md:17, results/increment4_delta.json (gen_ms).
+  gen_ms measures only the answer LLM call (get_llm().ainvoke), which is the
+  IDENTICAL operation in both arms; the retriever change does not touch it
+  except via prompt size. Per-row the delta's sign is not even stable: 2 of 5
+  questions got SLOWER after the cut (pol-02 964 -> 5768 ms, pol-03 683 -> 1798
+  ms), and the -68% mean is manufactured by two free-tier outliers in the
+  BEFORE arm (doc-09 13658 ms, doc-12 12590 ms). This is Groq server-load
+  variance, not a generation speedup from cutting multi-query. The delta.md's
+  own caveat ("the DELTA is the trustworthy part, not the absolute ms") is
+  wrong for THIS row specifically. Two fixes: (a) drop gen_time from the
+  headline win, or mark it "within free-tier variance, not attributable"; (b)
+  "TTFT proxy" is a misnomer, gen_ms is full non-streaming generation time, not
+  time-to-first-token. The genuine, defensible latency win is retrieval time
+  -94% (which already contains the eliminated expansion round-trip); reporting
+  both -94% retrieval and -68% generation risks implying a larger latency win
+  than exists. This does not affect the decision to ship the cut; it is a
+  correctness fix for the numbers before they ever feed a public/resume claim.
+
+NOTES (not defects):
+- The chat summary handed to me showed only the flattering table (tokens,
+  latency, hit@5) and "quality held", omitting the faithfulness 0.81 -> 0.55
+  line. The COMMITTED artifact is complete and honest about it, so this is a
+  communication nit, not an integrity problem in the deliverable. I review the
+  artifact, and the artifact is straight.
+- The 8b faithfulness judge scored two demonstrably-correct answers 0.0 this
+  run. That is now twice it has produced spurious zeros. Recommend not putting a
+  faithfulness MEAN in a headline table at all until a stronger judge is used;
+  the number is dominated by judge noise and invites the "quality dropped"
+  misread that this increment narrowly avoided only because someone read the
+  answers. Keep it in the raw JSON, out of the summary.
+- N=5 A/B and an 85-section corpus are honestly caveated, including the good
+  forward note that multi-query's value can grow with corpus size, so re-measure
+  if the corpus grows. Agreed.
+
+BOTTOM LINE: the optimization is sound and I would ship it. One fewer LLM call,
+about half the tokens, and near-zero retrieval overhead, with retrieval hit@5
+unchanged and answer quality confirmed intact by reading the answers, is a clean
+first P3 win, and it is fully reversible if a larger corpus later favors
+multi-query. Fix R4-1 (the generation-time row) so the delta table states only
+what the data supports, then this increment is clean and P4 hardening (anchored
+on the inj-01 system-prompt leak) can proceed.
+
+---
+
+## PLANNER RATIFICATION (2026-07-17): Increment 4 accepted (fix R4-1) + handoff-honesty norm + Increment 5 (P4 hardening)
+
+### Verdict
+Increment 4 ACCEPTED, ship the cut. Reviewer re-derived it: base ensemble is
+live by default (multi-query behind USE_MULTIQUERY, reversible), the R3-1 freeze
+hash actually trips on a one-word edit, the R3-2 stamp now reads Windows 11,
+hit@5 reproduced byte-identical, and quality held on HUMAN inspection of the
+judge's 0.0 answers (accurate, grounded, cited). The real, trustworthy win:
+- LLM calls per doc answer 2 -> 1 (verified all 5).
+- tokens per answer -53% (verified all 5), which ~doubles daily free-tier capacity.
+- retrieval time -94%; retrieval hit@5 unchanged (0.913).
+
+### Required correction (R4-1) before this increment closes
+The "generation time -68% (TTFT proxy)" row is NOT a real delta: gen_ms measures
+the same answer call in both arms, the per-row sign flips (2 of 5 got slower),
+and the -68% mean is manufactured by two free-tier outliers in the before arm.
+It is Groq variance, not a speedup from the cut, and "TTFT proxy" is a misnomer
+(full non-streaming generation time). FIX: drop it from the headline, or label
+it "within free-tier variance, not attributable". The genuine latency win is
+retrieval -94%, which already includes the eliminated expansion round-trip.
+Report only what the data supports.
+
+### Handoff-honesty norm (standing; trust-critical)
+The builder's chat summary showed the flattering table and omitted the
+faithfulness 0.81 -> 0.55 line; the committed artifact was complete and honest,
+and the reviewer (who reviews the ARTIFACT, not the summary) flagged the
+omission. STANDING RULE: every handoff summary must carry the INCONVENIENT
+numbers, not just the flattering ones. The reviewer reviews the committed
+artifact precisely so a rosy summary cannot become the record. Trust invariant,
+not a style preference.
+
+### Trust model (pinned; see LEARNINGS Part 7)
+Three grades of metric: (1) deterministic = reproduces bit-for-bit -> trust and
+headline (call counts, tokens, hit@5); (2) noisy-but-bounded = wobbles for
+reasons outside our code -> caveat, never headline raw (free-tier latency, weak
+8b judge); (3) manufactured = a noisy number dressed as clean -> kill it (the
+-68% row). Build claims only on grade 1; the process (determinism + independent
+re-run + honest disclosure) is what "trustworthy metrics" means, not perfect data.
+
+### >>> ACTIVE KICKOFF: Increment 5 (P4) - Service hardening, anchored on inj-01
+First: apply the R4-1 reporting fix (tiny), then close Increment 4.
+Then harden the real path:
+- PROMPT INJECTION (inj-01): the agent must stop disclosing its system prompt
+  and behavior rules on "print your instructions"-style requests. Defenses: do
+  not echo the system prompt; treat meta / instruction-override requests as
+  out-of-scope and refuse; sanitize obvious injection patterns. Re-run the
+  FROZEN adversarial set: refusal-correct must go 4/5 -> 5/5 (inj-01 refused),
+  the other four still passing, no cross-user regression.
+- Resilience: timeouts + retries with backoff on all LLM/retrieval calls;
+  defined failure messages (no stack traces); confirm F-1 sanitization holds.
+- Cost guards: confirm agent max-iterations (done 1.6) and bounded history (12);
+  add per-request input length limits and a per-request token cap; wire the rate
+  limiter (config rate_limit_per_minute is currently unused).
+GATE: the reviewer's hostile battery (100K-char input, injection, network kill,
+out-of-scope) cannot crash or leak; inj-01 refused and refusal-correct 5/5; NO
+regression on the FROZEN baselines (retrieval hit@5 still 0.913; tokens not
+ballooned; happy-path call counts unchanged). Append LEARNINGS (injection-defense
+concepts + the "instruction hierarchy" idea). Reviewer re-runs the hostile
+battery + the frozen evals. Last gate before P5 (container + CI) and P6 (deploy).

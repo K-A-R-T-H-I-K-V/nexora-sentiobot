@@ -1,0 +1,104 @@
+{
+  "judge_model": "llama-3.1-8b-instant",
+  "generator": "llama-3.3-70b-versatile",
+  "commit": "b34a8a91dc07f57d760bdc1512966fb845be70d8",
+  "note": "SECONDARY/indicative. RAGAS-style = custom weak-judge (8b grading 70b), not the ragas library.",
+  "completed": [
+    "multi_query_reference",
+    "tool_call_correctness"
+  ],
+  "multi_query_reference": {
+    "n": 23,
+    "hit_rate_at_5": 0.913,
+    "note": "full MultiQueryRetriever (adds 1 LLM call/query); compare to base-ensemble deterministic hit@5"
+  },
+  "tool_call_correctness": {
+    "n": 8,
+    "tool_correct": 8,
+    "args_correct": 8,
+    "rows": [
+      {
+        "id": "ord-01",
+        "expected_tool": "check_order_status",
+        "called": [
+          "check_order_status"
+        ],
+        "tool_correct": true,
+        "args_correct": true
+      },
+      {
+        "id": "ord-06",
+        "expected_tool": "check_order_status",
+        "called": [
+          "check_order_status",
+          "lookup_documentation"
+        ],
+        "tool_correct": true,
+        "args_correct": true
+      },
+      {
+        "id": "war-01",
+        "expected_tool": "check_warranty_status",
+        "called": [
+          "check_warranty_status",
+          "create_support_ticket"
+        ],
+        "tool_correct": true,
+        "args_correct": true
+      },
+      {
+        "id": "war-03",
+        "expected_tool": "check_warranty_status",
+        "called": [
+          "check_warranty_status",
+          "lookup_documentation"
+        ],
+        "tool_correct": true,
+        "args_correct": true
+      },
+      {
+        "id": "war-06",
+        "expected_tool": "check_warranty_status",
+        "called": [
+          "check_warranty_status",
+          "lookup_documentation"
+        ],
+        "tool_correct": true,
+        "args_correct": true
+      },
+      {
+        "id": "tkt-01",
+        "expected_tool": "create_support_ticket",
+        "called": [
+          "create_support_ticket"
+        ],
+        "tool_correct": true,
+        "args_correct": true
+      },
+      {
+        "id": "tkt-03",
+        "expected_tool": "create_support_ticket",
+        "called": [
+          "create_support_ticket"
+        ],
+        "tool_correct": true,
+        "args_correct": true
+      },
+      {
+        "id": "tkt-05",
+        "expected_tool": "create_support_ticket",
+        "called": [
+          "create_support_ticket"
+        ],
+        "tool_correct": true,
+        "args_correct": true
+      }
+    ]
+  },
+  "stopped_early": "Groq daily quota hit: The assistant is temporarily unavailable. Please try again in a moment.",
+  "tokens_spent": {
+    "generation": 53156,
+    "judge": 7058,
+    "total": 60214
+  }
+}

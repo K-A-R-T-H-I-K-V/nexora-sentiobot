@@ -128,3 +128,20 @@ def create_ticket(user_id: str, summary: str, ticket_id: str) -> dict:
         "status": "open",
     }).execute()
     return result.data[0]
+
+
+# ---------------------------------------------------------------------------
+# Instrumentation: count Supabase round trips per request (measurement only;
+# does not change behavior). Each public function does one .execute() round
+# trip, so wrapping them counts round trips for the Increment 2 baseline.
+# ---------------------------------------------------------------------------
+
+from backend.core import metrics as _metrics  # noqa: E402
+
+for _name in (
+    "get_user_by_username", "get_user_by_id", "get_product_by_serial",
+    "get_order_by_id", "create_conversation", "get_conversations_for_user",
+    "save_message", "get_messages_for_conversation", "log_analytics",
+    "update_analytics_feedback", "create_ticket",
+):
+    globals()[_name] = _metrics.count_supabase(globals()[_name])

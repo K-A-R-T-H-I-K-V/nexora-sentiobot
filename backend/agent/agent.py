@@ -29,6 +29,7 @@ from __future__ import annotations
 import json
 import pickle
 import os
+import time
 import logging
 from typing import AsyncIterator, TypedDict, Annotated
 
@@ -52,6 +53,7 @@ from pydantic import BaseModel, Field
 
 from backend.core.config import get_settings
 from backend.core.request_context import current_user_id
+from backend.core import metrics
 from backend.agent.tools import check_order_status, check_warranty_status, create_support_ticket
 
 logger = logging.getLogger(__name__)
@@ -110,7 +112,10 @@ def get_retriever():
         return _retriever
 
     s = get_settings()
-    embedding_model = HuggingFaceEmbeddings(model_name=s.embedding_model)
+    # Wrapped only to count embedding ops (same vectors); measurement only.
+    embedding_model = metrics.CountingEmbeddings(
+        HuggingFaceEmbeddings(model_name=s.embedding_model)
+    )
 
     vectorstore = Chroma(
         persist_directory=s.vector_db_path,
@@ -162,7 +167,9 @@ def _format_sources(docs: list[Document]) -> list[dict]:
 async def _retrieve_context(query: str) -> tuple[str, list[dict]]:
     """Retrieve docs and return (formatted_context_str, sources_list)."""
     retriever = get_retriever()
-    docs: list[Document] = await retriever.ainvoke(query)
+    _t = time.perf_counter()
+    docs: list[Document] = await retriever.ainvoke(query, config=metrics.callback_config())
+    metrics.set_field("retrieval_ms", (time.perf_counter() - _t) * 1000.0)
     if not docs:
         return "", []
 
@@ -418,6 +425,7 @@ async def stream_agent_response(
         kw in user_message.lower()
         for kw in ["order", "warranty", "serial", "ticket", "human", "support"]
     )
+    metrics.set_field("route", "tool" if is_tool_query else "rag")
 
     # For pure documentation queries, stream tokens directly via RAG
     if not is_tool_query:
@@ -437,7 +445,7 @@ async def stream_agent_response(
             messages = [SystemMessage(content=sys_content)] + lc_history + [HumanMessage(content=user_message)]
 
             full_answer = ""
-            async for chunk in llm.astream(messages):
+            async for chunk in llm.astream(messages, config=metrics.callback_config()):
                 token = chunk.content
                 if token:
                     full_answer += token
@@ -474,7 +482,8 @@ async def stream_agent_response(
             version="v2",
             # Backstop above the round-based finalize (which triggers first);
             # the force-finalize path, not this limit, is what makes it converge.
-            config={"recursion_limit": 2 * max_rounds + 6},
+            # callback_config also attaches the metrics observer (measurement only).
+            config=metrics.callback_config({"recursion_limit": 2 * max_rounds + 6}),
         ):
             kind = event.get("event")
 

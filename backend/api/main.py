@@ -39,6 +39,7 @@ import backend.services.database as db
 import backend.services.cache as cache
 from backend.agent.agent import stream_agent_response
 from backend.core.config import get_settings
+from backend.core import metrics
 
 # ---------------------------------------------------------------------------
 # App setup
@@ -116,6 +117,7 @@ async def chat_stream(
       data: {"type": "done",       "data": {"answer": "...", "sources": [...]}}
       data: {"type": "error",      "data": {"message": "..."}}
     """
+    metrics.start()  # per-request measurement (measurement only; see core/metrics.py)
     user_id = current_user["id"]
     user_profile = {
         "name": current_user.get("name", "Guest"),
@@ -125,6 +127,8 @@ async def chat_stream(
     # ---- Cache check (skip the agent, but still persist the turn) ----
     cached = await cache.get_cached_response(user_id, req.message)
     if cached:
+        metrics.set_field("route", "cache")
+        metrics.set_field("cache_hit", True)
         # F-3: persist the exchange so cached turns are not missing from
         # conversation history. Resolve/create the conversation, save both
         # messages, and log an analytics row (so feedback works on cached
@@ -148,11 +152,14 @@ async def chat_stream(
             "timestamp": datetime.utcnow().isoformat(),
         })
 
+        m = metrics.get()
         async def cached_stream():
             payload = json.dumps({"type": "token", "data": cached})
             yield f"data: {payload}\n\n"
-            payload = json.dumps({"type": "done", "data": {"answer": cached, "sources": [], "cached": True, "interaction_id": interaction_id}})
-            yield f"data: {payload}\n\n"
+            done_data = {"answer": cached, "sources": [], "cached": True, "interaction_id": interaction_id}
+            yield f"data: {json.dumps({'type': 'done', 'data': done_data})}\n\n"
+            if m is not None:
+                yield f"data: {json.dumps({'type': 'metrics', 'data': m.as_dict()})}\n\n"
 
         return StreamingResponse(
             cached_stream(),
@@ -222,6 +229,13 @@ async def chat_stream(
                 "feedback": 0,
                 "timestamp": datetime.utcnow().isoformat(),
             })
+
+        # Trailing measurement event with the COMPLETE per-request metrics
+        # (including the post-answer Supabase writes). The client ignores
+        # unknown event types; this is measurement only.
+        _m = metrics.get()
+        if _m is not None:
+            yield f"data: {json.dumps({'type': 'metrics', 'data': _m.as_dict()})}\n\n"
 
     return StreamingResponse(
         generate(),

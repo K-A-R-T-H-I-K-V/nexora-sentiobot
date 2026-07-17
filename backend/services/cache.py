@@ -46,10 +46,11 @@ def _get_embedder():
     global _embedder
     if _embedder is None:
         from langchain_huggingface import HuggingFaceEmbeddings
-        _embedder = HuggingFaceEmbeddings(
+        from backend.core import metrics
+        _embedder = metrics.CountingEmbeddings(HuggingFaceEmbeddings(
             model_name="all-MiniLM-L6-v2",
             model_kwargs={"device": "cpu"},
-        )
+        ))
     return _embedder
 
 

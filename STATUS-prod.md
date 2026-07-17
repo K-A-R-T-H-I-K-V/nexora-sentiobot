@@ -1970,3 +1970,202 @@ HONEST NOTES:
 FOR THE PLANNER: nothing optimized. The baseline is committed and stamped so
 every P3 candidate can report its delta against it. Ready for the reviewer's
 re-run, then push v2-fullstack, then P3 Rank 1.
+
+---
+
+### Increment 2 - LATENCY BASELINE, adversarial review (reviewer, 2026-07-17)
+
+Scope: 7a6123f..da068d4 (instrumentation eb5df80, baseline results e19c001,
+log da068d4). Re-derived from the diff and independently re-run.
+
+VERDICT: SOLID. The baseline measures the REAL path, is properly stamped,
+and its deterministic core reproduces exactly when I re-ran it live. The
+instrumentation is genuinely observation-only and does not perturb what it
+measures. No optimization was performed (correctly gated). Findings are three
+P3 wording/statistics nits that matter only when these numbers become public
+claims (P6); none block the increment.
+
+WHAT I VERIFIED (re-ran, did not read):
+- Real path: latency_baseline.py drives /chat/stream over HTTP with a real
+  login and both routes, and asserts cache_hit=False on the cold set
+  (contamination guard). This is an honest end-to-end measurement, not a
+  function-level mock.
+- Call inventory is real and TRACEABLE to the code, not fabricated. I traced
+  every count and it matches: RAG supabase=5 (create_conversation +
+  get_messages + save user + save assistant + log_analytics), cache-warm
+  supabase=4 (same minus the history load the cache path skips), RAG llm=2
+  (MultiQuery expansion call + answer call), embeds=7 (L2 get + ~4 Chroma
+  multi-query embeds + L2 set). All internally consistent.
+- INDEPENDENT LIVE RE-RUN: I drove one novel, uncached RAG query through the
+  running backend. Result: route=rag, cache_hit=false, llm_calls=2,
+  embedding_ops=7, supabase_calls=5, retrieval_ms=629.6. That matches the
+  committed runs' deterministic fields exactly (their retrieval was 601-641
+  ms). The "RAG spends 2 LLM calls, one of them pure MultiQuery overhead"
+  headline finding is confirmed first-hand.
+- Instrumentation is observation-only: RequestMetrics lives in a ContextVar
+  (per-request, concurrency-safe); CountingEmbeddings returns the SAME
+  vectors and only increments a counter; count_supabase returns the SAME
+  data; the MetricsCallback only reads usage. The one new output is a
+  trailing `metrics` SSE event emitted AFTER `done` and after persistence, so
+  it cannot alter the answer or the saved row. I confirmed the real frontend
+  tolerates it: the chat page's event switch has a `default: return m` arm
+  (page.tsx:190), so a `metrics` event is silently ignored, and api.ts adds
+  it to the SSEEvent union. "No behavior changed" holds.
+- Provenance stamped: provider, model, temperature 0.0, max_tokens, commit
+  (eb5df80), UTC dates, hardware, and the client-vs-server measurement note
+  are all in each JSON and the .md.
+- Secrets/PII: the committed results contain no answer bodies, keys, tokens,
+  or credentials (only timings, counts, and generic product queries). Clean.
+
+FINDINGS (all P3; wording/statistics, relevant when these become public):
+
+R2-1 [P3] Reproducibility prose overstates determinism.
+  file: results/latency_baseline.md:52 ("tokens/request are identical across
+  runs (deterministic)"). The call inventory and PROMPT tokens are identical,
+  but COMPLETION tokens differ run to run (RAG 360 vs 348, tool 74 vs 87)
+  because Groq is not bit-deterministic even at temperature 0. The results
+  TABLE is honest (it shows both values); only the summary sentence
+  overstates. Reword to "call inventory and prompt tokens are identical;
+  completion tokens vary slightly (Groq is not bit-exact at temp 0)."
+
+R2-2 [P3] "p95" on n=3 is not a tail statistic.
+  file: results/latency_baseline.md:22 and latency_baseline.py aggregate().
+  Each cold bucket has n=3, so the reported TTFT/e2e "p95" is effectively the
+  max of three samples (the interpolation lands on the top value), not a
+  robust 95th percentile. The token-frugal design (Groq 100K/day) justifies
+  n=3, but the p95 column should be labeled "max of 3" or dropped so a later
+  reader (or a README/resume claim in P6) does not mistake it for a real
+  tail. Latency itself is very noisy here anyway: my single live RAG TTFT was
+  3.1s against a committed p50 of 8.6-11.3s, i.e. dominated by Groq
+  free-tier server load, not the code.
+
+R2-3 [P3] Hardware stamp says "Windows 10" on a Windows 11 host.
+  file: latency_baseline.py:177 (platform.release()). Python's
+  platform.release() returns "10" on Windows 11 (a known stdlib quirk), so
+  every stamp reads "Windows 10". Harmless now, but fix before any public
+  latency table so the stated environment is accurate (parse the build
+  number, or just record it as "Windows" without the wrong release).
+
+FORWARD NOTE (not a defect): before any latency number becomes a resume or
+README claim, re-measure on the actual deploy target rather than localhost
+against free-tier Groq, and carry the n and the variance caveat with it. The
+current numbers are a fine INTERNAL baseline for measuring P3 deltas (which
+is all this increment claims), but they are too load-dependent to publish as
+headline latency without a controlled re-run.
+
+BOTTOM LINE: the baseline is trustworthy for its stated purpose. It measures
+the real system, the deterministic call/token inventory is correct and I
+reproduced it live, and the instrumentation does not distort the result. Fix
+the three P3 wording/stat nits before these numbers are ever shown to anyone
+outside this repo; otherwise this increment is clean and P3 Rank 1 (cut/gate
+MultiQuery) can now report its delta against a real, committed baseline.
+
+---
+
+## PLANNER RATIFICATION (2026-07-17): Increment 2 accepted + LEARNINGS process + Increment 3 (P2 quality baseline)
+
+### Verdict
+Increment 2 baseline ACCEPTED as the internal baseline for measuring P3 deltas.
+Reviewer independently re-ran the deterministic core live (llm_calls=2,
+embeds=7, supabase=5, retrieval ~629ms) matching the committed table, and
+confirmed the instrumentation is observation-only. The frozen baseline stands.
+Three P3 nits, none block P3, ALL must be fixed before any number is PUBLISHED
+to README/resume:
+- R2-1: "tokens/request identical" overstates; completion tokens vary run to
+  run (360 vs 348) as Groq is not bit-exact at temp 0. Fix the summary
+  sentence; the table itself is honest.
+- R2-2: "p95" on n=3 is max-of-3, not a real tail. Relabel before it becomes a
+  public number.
+- R2-3: hardware stamp says Windows 10 on a Windows 11 box (platform.release()
+  quirk). Fix before publishing.
+R2-1 and R2-3 are one-line fixes that may ride along with any P3 commit; all
+three are P6-gating (README/resume honesty).
+
+### Decision: deploy-target re-measure is deferred and affordable
+A PUBLISHED latency claim should be re-measured off localhost + free-tier Groq,
+which is noisy (live TTFT swung 3.1s vs 8.6-11.3s p50, dominated by Groq server
+load, not our code). This is a P6 concern, NOT a blocker. The dev is a student
+on a zero budget; that is fine and does not weaken the work. Rationale we
+stand on: publish DELTAS ("LLM calls per doc query 2 -> 1, tokens/answer -X%"),
+which are robust to environment because before/after run on the same machine
+and provider; treat absolute p50/p95 as indicative with n and variance
+caveats. Free deploy targets exist for the eventual real number at P6 (HF
+Spaces, Render/Fly/Railway free, Cloud Run free tier), so a paid environment is
+never required.
+
+### Decision: LEARNINGS.md is a standing artifact (the dev is learning)
+New file docs/LEARNINGS.md, seeded by the planner across Increments 0 to 2. From
+here, EVERY increment: the BUILDER appends what it built + the architecture and
+concepts touched + the lesson; the REVIEWER appends what it found + the deeper
+principle + how to avoid the mistake. In-depth, plain, teaching tone, no em
+dashes. The dev converts to PDF on demand. This does NOT replace STATUS logging:
+STATUS is the terse ledger, LEARNINGS is the narrative companion. Every future
+kickoff references it.
+
+### Sequencing note (why quality baseline is next, not the multi-query cut)
+The multi-query cut's LATENCY baseline exists (Increment 2), but its QUALITY
+baseline does not. Cutting multi-query may lower recall, and we cannot yet
+measure that; the reviewer flagged exactly this. Holding the line: no
+optimization ships before BOTH its baselines exist. So Increment 3 builds the
+quality baseline; Increment 4 then cuts multi-query with a real
+faithfulness/hit-rate delta. That is also the stronger resume result ("cut LLM
+calls per query in half and tokens by X while faithfulness held at Y on a
+frozen 50-question set").
+
+### >>> ACTIVE KICKOFF: Increment 3 (P2) - Quality baseline (golden set + retrieval metrics + sampled RAGAS)
+- Golden set: ~50 question/expected pairs (with expected sources) across doc
+  lookup, order status, warranty, ticket creation, multi-turn, and
+  out-of-scope-must-refuse. Include a few injection/refuse cases from the start
+  (the reviewer's hostile battery already exists). COMPOSITION RATIFIED by the
+  planner BEFORE freezing (this is the ratification fight; propose the set, do
+  not freeze unilaterally). Then FROZEN; later edits are logged ratification
+  events.
+- Metrics pinned BEFORE results: retrieval hit-rate@k + context precision
+  (deterministic, LOCAL, FREE, zero Groq tokens) as the PRIMARY baseline;
+  RAGAS faithfulness + answer relevancy (LLM-judged) on a SMALL sampled subset,
+  temp 0, at least 2 runs for a variance band, judge model documented and
+  ideally different from the generator; tool-call correctness (right tool,
+  right args) for agent flows.
+- Token budget: deterministic metrics cost 0 Groq tokens (embeddings local);
+  RAGAS is the only spend. Size the RAGAS subset to fit well under 100K/day
+  (e.g. 10 to 15 questions x 2 runs); log tokens used; spread across days if
+  needed.
+- Run through the REAL routing (keyword router + both paths) so the eval is
+  honest, including the tool path.
+- Leakage guard: do not hand-fit chunking or ensemble weights to the golden
+  set; if you iterate, hold out a split.
+GATE: golden set frozen + committed; baseline scores committed and reproduced
+twice (deterministic metrics bit-stable, RAGAS within its variance band);
+recipe stamped (dataset version, model, temp, k, judge, commit, date, tokens
+spent); LEARNINGS.md appended; results under results/. Reviewer re-runs.
+
+### Queued: Increment 4 (P3 Rank 1) - cut or gate the MultiQueryRetriever
+Measured against BOTH baselines (Increment 2 latency + Increment 3 quality).
+First variant to measure: plain ensemble (BM25 + vector, no multi-query),
+multi-query kept behind a config flag (a switch, not a deletion). Report deltas
+in latency, call count, tokens/request, AND faithfulness/hit-rate; keep only if
+quality holds.
+
+### PLANNER RATIFICATION (2026-07-17): Increment 3 golden-set composition (pre-ratified)
+The dev approved including adversarial cases. Composition RATIFIED (target ~50):
+- Documentation lookup (manuals: install / how-to / troubleshooting): ~15
+- Policy + warranty-terms lookup (policies.md): ~8
+- Order status (tool check_order_status, valid + unknown id): ~6
+- Warranty status (tool check_warranty_status, incl. profile-serial proactive
+  case, active + expired): ~6
+- Ticket creation / human escalation (tool create_support_ticket): ~5
+- Multi-turn context carry-over (2 to 3 turns each): ~5
+- Out-of-scope must-REFUSE (off-domain, competitor product, medical/legal): ~3
+- Prompt-injection must-RESIST (system-prompt exfil, cross-user data request,
+  instruction override): ~2
+Scoring split (pin this so numbers never mix):
+- Answerable items: hit-rate@k + context precision + sampled RAGAS
+  faithfulness/relevancy + tool-call correctness.
+- Adversarial items (refuse/resist): pass/fail BEHAVIOR assertions only
+  (refused politely / did not leak the system prompt / did not fabricate / did
+  not return another user's data). EXCLUDED from hit-rate and faithfulness
+  (they have no expected source). Report the two groups SEPARATELY; a
+  "refusal-correct %" must never be blended into the retrieval score.
+The builder still presents the concrete 50 for a final freeze check, but this
+distribution and the scoring split are pre-ratified so Increment 3 does not
+stall on it.

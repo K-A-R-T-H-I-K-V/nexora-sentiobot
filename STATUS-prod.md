@@ -1676,3 +1676,189 @@ Groq, token-budgeted) can start. One measured lever became more attractive under
 F1.5-4: cutting/gating MultiQuery and trimming retrieved-source count would
 roughly multiply daily demo capacity, but it stays behind the P1/P2 baseline as
 ratified.
+
+---
+
+### Increment 1.6 - TOOL-PATH RELIABILITY, adversarial re-review (reviewer, 2026-07-17)
+
+Scope: e5ab5d3..b76fde9 (code in 8acfc2f, test in 28d54a5). Re-derived from
+the diff and re-run by the reviewer. This increment targets my prior
+F1.5-1 (tool loop / non-convergence), F1.5-2 (answer-then-error), and
+F1.5-3 (silent fake ticket).
+
+VERDICT: CLEAN. All three findings are genuinely fixed and I verified each
+one myself, including the two most important ones live against the real
+model and the real database. The convergence architecture is sound (it
+guarantees termination independent of the model), and the escalation path
+now persists honestly. No new P0/P1/P2 defects. Residual items below are the
+already-deferred operational ceiling and two low-risk notes, none blocking.
+
+HOW I VERIFIED (re-ran, did not read):
+
+F1.5-1 tool-path convergence: FIXED, verified two ways.
+  - Deterministic mock test (backend/scripts/check_tool_convergence.py):
+    ran it twice, PASS both times. A fake LLM that ALWAYS re-requests the
+    same tool still converges: the tool executes exactly ONCE (dedupe held
+    across rounds via the called_tools state channel), tool_rounds stops at
+    the cap, and the finalize node produces a text answer. No
+    GraphRecursionError. This needs no Groq tokens and belongs in CI.
+  - LIVE against Groq (the exact query that hard-failed in 1.5): "I want to
+    talk to a human agent please" now returns status=DONE+ANSWER with
+    tools=[create_support_ticket] called ONCE (was 3x + recursion error
+    before), a coherent 232-char answer, and a clean done event.
+  Mechanism is correct and, importantly, robust: convergence is guaranteed
+  by the ROUND CAP plus the forced finalize_node (which answers without
+  bind_tools), not by the dedupe alone. Dedupe (agent.py:289-325) only
+  removes wasted repeat executions; even a model that calls a different tool
+  every round, or ignores the dedupe nudge, still hits max_tool_rounds (4)
+  and is routed to finalize (should_continue at agent.py:351-357).
+  recursion_limit is now 2*max_rounds+6 (14), a backstop strictly above the
+  finalize trigger, so finalize fires first. I confirmed there are no
+  dangling references to the removed agent_max_iterations and that
+  agent_max_tool_rounds is wired end to end (config -> state -> routing).
+
+F1.5-2 graceful done: FIXED. agent.py:513-519 now yields a `done` (with any
+  captured sources) when a real answer already streamed, and only errors on
+  a pre-answer failure. The live human-escalation run above ended on a real
+  done event (done=True), and because convergence now fires finalize before
+  the recursion backstop, the answer-then-error window is both far narrower
+  and handled correctly when it does occur. Correct by inspection and
+  consistent with the live behavior.
+
+F1.5-3 honest escalation: FIXED, verified live against Supabase (no Groq
+  needed). I exercised create_support_ticket directly through the new
+  request-context path (backend/core/request_context.py), three cases:
+    1. real authenticated user_id in context -> a real row persisted (row
+       count delta exactly +1) and an honest success is returned;
+    2. no user in context -> honest refusal, no DB write, no row;
+    3. bogus non-UUID user ("guest") -> db insert fails the users FK
+       (22P02 invalid uuid), the failure is now LOGGED server-side via
+       logger.exception AND surfaced as an honest "I was unable to create a
+       support ticket" message, NOT the old fake "ticket created" success,
+       and no ghost row is left.
+  The LLM-supplied user_id argument is gone from the tool signature; the real
+  user_id is bound into a ContextVar inside the tool node's own coroutine
+  (agent.py:294) so it propagates through LangGraph's per-node context copy,
+  and it is read server-side in the tool (tools.py:106-114). ContextVar is
+  the right primitive here: it is per-task, so concurrent requests cannot
+  cross-contaminate. The live human-escalation run also persisted a genuine
+  row (TICKET-25FB3C, summary "User request to speak with a human agent"),
+  end-to-end proof through the actual agent path. Note that support_tickets
+  went from 0 rows (silent failures in 1.5) to real rows now, which is the
+  behavior change this finding demanded.
+
+REGRESSION SWEEP (all green):
+  - Cache privacy check: still PASS (no cross-user leak; same-user hit
+    works). The cache path is untouched by 1.6.
+  - Boot: `import backend.api.main` OK; app 2.0.0.
+  - Byte-compile of all changed modules: clean.
+  - F-2 token suppression still holds: the streaming allowlist widened to
+    ("agent", "finalize") so the forced-finish answer streams, while the
+    "tools" node (nested MultiQuery expansion) stays suppressed. The live
+    answer was clean prose with no rephrasing/JSON leak.
+
+DESIGN NOTES (not defects):
+  - finalize_node makes one extra LLM call when the round cap is hit. That is
+    the intended, bounded cost of guaranteed convergence and only triggers
+    against a genuinely looping model. Acceptable.
+  - The dedupe/round state fields use plain (overwrite) state channels; the
+    node reads-accumulates-returns the full list each round, which is the
+    correct pattern for a last-value-wins channel (the mock test proves the
+    signature persists across rounds).
+
+RESIDUAL / STILL OPEN (deferred, not blocking 1.6):
+  - F1.5-4 (Groq free tier is 100K tokens/DAY) is NOT addressed here and was
+    not in 1.6 scope. Convergence helps at the margin by killing loop-burned
+    tokens, but the per-answer cost (about 20 retrieved sources plus the
+    MultiQuery expansion call) is unchanged, so the daily demo ceiling
+    stands. Remains a P4 item (per-request token cap / trim sources / gate
+    MultiQuery), correctly gated behind the P1/P2 baselines.
+  - Fresh scratch-venv cold install for the current pin set: I did not
+    re-run a from-empty `pip install` (b76fde9 claims it verified). The
+    existing venv resolves langchain-groq 0.2.5 + langchain-core 0.3.63 and
+    the app imports and runs; the pin set is internally coherent. Low risk,
+    but a true cold install is still worth one run before deploy.
+  - Live multi-turn cached-context and container runtime chat were not
+    re-run (both hit the same Groq daily budget); no reason to doubt them
+    given the code, but they close only on a fresh quota.
+
+BOTTOM LINE: Increment 1.6 does exactly what it claims. The tool path now
+converges reliably (verified live on the query that previously failed), the
+answer-then-error case is gone, and escalation persists a real ticket or
+fails honestly, never lies. This closes F1.5-1/2/3. The gate is met. The
+only open item of substance is the Groq daily-token ceiling (F1.5-4), which
+is already deferred to P4 by ratification.
+
+---
+
+## PLANNER RATIFICATION (2026-07-17): Increment 1.6 CLEAN + Increment 2 (baseline: latency, API calls, tokens)
+
+### Verdict
+Increment 1.6 CLEAN. Reviewer verified F1.5-1 (convergence via round cap +
+forced finalize; deterministic mock test is CI-ready and passed; live "talk to
+a human" query now returns one tool call + a clean done), F1.5-2 (done fires
+after answer-then-fail), and F1.5-3 (honest ticket via request-context
+ContextVar; real Supabase rows; honest refusal and honest failure, no ghost
+row). Regression sweep green: cache privacy, boot, F-2 suppression (allowlist
+widened to agent+finalize, tools still suppressed).
+
+FOUNDATION IS CLOSED. The system boots from one command, both routes ground
+and cite on Groq, escalation is honest, and failures degrade cleanly. This is
+the point the baselines are measured from.
+
+### Decision: hold measure-before-optimize (the dev asked to optimize API calls now)
+Right instinct, right target, wrong order if done by hand. We instrument and
+BASELINE the call graph first (Increment 2), then cut redundant calls with
+measured deltas (P3). No optimization ships before Increment 2's numbers are
+committed. The dev's ask promotes API-call COUNT and TOKENS-PER-REQUEST to
+first-class baseline metrics alongside latency (the 100K tokens/day ceiling
+makes tokens/request as important as milliseconds).
+
+### API-call inventory (planner analysis, confirmed against current code)
+RAG route, cache miss:
+- 1 LLM call: MultiQueryRetriever generates 3 rephrasings BEFORE any answer
+  (agent.py:136). Pure TTFT + token overhead.
+- ~4 local MiniLM embeds (orig + 3) + Chroma + BM25, all local (no API).
+- 1 LLM streaming call: the answer (agent.py:440).
+  => 2 LLM API calls per doc answer.
+Tool route: 1 LLM call to choose a tool, tool runs (DB), 1+ LLM call to answer
+or finalize; if lookup_documentation is called it nests the retriever's
+multi-query LLM call too. Bounded by the round cap + forced finalize.
+Supabase per request (miss): create_conversation (if new) + get_messages +
+save_message(user) + save_message(assistant) + set_cached + log_analytics =
+~5-6 sequential awaits; log_analytics blocks the response though it need not.
+Redundancy hot spots:
+1. Multi-query LLM call on EVERY doc query [Rank 1: cut or gate].
+2. Two MiniLM embedder instances (cache.py:49 + retriever) and the query is
+   embedded twice (cache L2 then retriever) [Rank 5: share one embedder, reuse
+   the vector].
+3. Sequential blocking Supabase writes; analytics could be fire-and-forget or
+   batched.
+4. First-request cold start on lazy singletons (retriever, LLM, embedder).
+
+### >>> ACTIVE KICKOFF: Increment 2 (BUILDER) - Baseline: latency + call count + tokens/request
+Instrument the CURRENT system. Change NO behavior; add measurement only.
+Emit structured JSON per request, separately for the RAG route and the tool
+route, capturing:
+- time-to-first-token (TTFT), retrieval time (including the multi-query LLM
+  call), and end-to-end, reported as p50/p95 over a fixed request set.
+- API call counts per request: number of LLM calls, embedding ops, and
+  Supabase round trips.
+- tokens per request (prompt + completion) from Groq usage metadata, so we can
+  see how far 100K/day actually stretches.
+Drive a small FIXED, deterministic request set through the REAL endpoint (both
+routes) so routing and caching are exercised honestly; measure cache-cold and
+cache-warm. Keep it token-frugal (a handful of requests; reuse where possible).
+Commit results as JSON + a short markdown table under results/, stamped with
+model id, commit hash, date, hardware.
+GATE: baseline committed and reproduced twice (stable within noise), including
+the per-route call inventory and the tokens/request table. NO optimization in
+this increment. Then P3 begins with Rank 1 (cut or gate multi-query); every P3
+change re-runs against this baseline and reports its delta in latency AND in
+call count AND in tokens/request, honestly, including regressions.
+
+### Forward
+- P3 order stands (Rank 1 multi-query first). Every candidate now reports
+  call-count and tokens/request deltas, not latency alone.
+- Analytics write made non-blocking / batched -> candidate under Rank 2/P3
+  (measure first).

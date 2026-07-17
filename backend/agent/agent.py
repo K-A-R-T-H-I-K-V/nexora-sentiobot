@@ -51,6 +51,7 @@ from langgraph.prebuilt import ToolNode
 from pydantic import BaseModel, Field
 
 from backend.core.config import get_settings
+from backend.core.request_context import current_user_id
 from backend.agent.tools import check_order_status, check_warranty_status, create_support_ticket
 
 logger = logging.getLogger(__name__)
@@ -207,8 +208,12 @@ def _extract_tool_sources(output) -> list[dict]:
 class AgentState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
     user_profile: dict
+    user_id: str
     sources: list[dict]
     final_answer: str
+    called_tools: list[str]      # signatures of (tool_name, args) already executed
+    tool_rounds: int             # number of tools-node visits so far
+    max_tool_rounds: int         # after this many rounds, force finalize
 
 
 # ---------------------------------------------------------------------------
@@ -216,7 +221,20 @@ class AgentState(TypedDict):
 # ---------------------------------------------------------------------------
 
 TOOLS = [lookup_documentation, check_order_status, check_warranty_status, create_support_ticket]
-TOOL_NODE = ToolNode(TOOLS)
+_TOOLS_BY_NAME = {t.name: t for t in TOOLS}
+
+_DEDUPE_NUDGE = (
+    "You already called this tool with these exact arguments and its result is "
+    "above. Do NOT call it again. Answer the user's question now using the "
+    "information already gathered."
+)
+
+
+def _tool_signature(name: str, args: dict) -> str:
+    try:
+        return f"{name}:{json.dumps(args, sort_keys=True, default=str)}"
+    except Exception:
+        return f"{name}:{args!r}"
 
 
 def _build_system_message(user_profile: dict) -> str:
@@ -268,10 +286,73 @@ async def call_model(state: AgentState) -> AgentState:
     return {"messages": [response]}
 
 
+async def dedupe_tool_node(state: AgentState) -> AgentState:
+    """Execute the requested tool calls, but SKIP any (tool, args) already run
+    this turn (F1.5-1). A repeated call returns a nudge instead of re-executing,
+    so the model stops looping and the daily token budget is not burned.
+
+    The authenticated user_id is bound into the request context here, in the
+    same coroutine that awaits the tools, so create_support_ticket uses the real
+    user rather than an LLM-supplied value (F1.5-3).
+    """
+    current_user_id.set(state.get("user_id", ""))
+
+    last = state["messages"][-1]
+    called = list(state.get("called_tools", []))
+    out_messages: list[BaseMessage] = []
+
+    for tc in getattr(last, "tool_calls", []) or []:
+        name = tc["name"]
+        args = tc.get("args", {}) or {}
+        tc_id = tc.get("id", "")
+        sig = _tool_signature(name, args)
+
+        if sig in called:
+            out_messages.append(ToolMessage(content=_DEDUPE_NUDGE, tool_call_id=tc_id, name=name))
+            continue
+
+        called.append(sig)
+        tool = _TOOLS_BY_NAME.get(name)
+        if tool is None:
+            out_messages.append(ToolMessage(content=f"Unknown tool: {name}.", tool_call_id=tc_id, name=name))
+            continue
+
+        try:
+            result = await tool.ainvoke(args)
+        except Exception:
+            logger.exception("Tool %s raised", name)
+            result = f"The {name} tool could not complete right now."
+        content = result if isinstance(result, str) else str(result)
+        out_messages.append(ToolMessage(content=content, tool_call_id=tc_id, name=name))
+
+    return {
+        "messages": out_messages,
+        "called_tools": called,
+        "tool_rounds": state.get("tool_rounds", 0) + 1,
+    }
+
+
+async def finalize_node(state: AgentState) -> AgentState:
+    """Forced graceful finish: answer WITHOUT tools once the round cap is hit,
+    guaranteeing convergence even if the model keeps trying to call tools."""
+    llm = get_llm()  # no bind_tools -> the model must answer, not call tools
+    sys_msg = SystemMessage(content=(
+        _build_system_message(state["user_profile"])
+        + "\n\nYou have gathered enough information from the tools above. Answer "
+          "the user's question now, concisely, using that information. Do NOT "
+          "call any tools."
+    ))
+    response = await llm.ainvoke([sys_msg] + state["messages"])
+    return {"messages": [response]}
+
+
 def should_continue(state: AgentState) -> str:
-    """Route: if last message has tool calls → tools node, else → END."""
+    """Route: tool calls -> tools, unless the round cap is hit -> finalize;
+    no tool calls -> END."""
     last = state["messages"][-1]
     if hasattr(last, "tool_calls") and last.tool_calls:
+        if state.get("tool_rounds", 0) >= state.get("max_tool_rounds", 4):
+            return "finalize"
         return "tools"
     return END
 
@@ -287,11 +368,16 @@ def get_graph():
 
     workflow = StateGraph(AgentState)
     workflow.add_node("agent", call_model)
-    workflow.add_node("tools", TOOL_NODE)
+    workflow.add_node("tools", dedupe_tool_node)
+    workflow.add_node("finalize", finalize_node)
 
     workflow.set_entry_point("agent")
-    workflow.add_conditional_edges("agent", should_continue, {"tools": "tools", END: END})
+    workflow.add_conditional_edges(
+        "agent", should_continue,
+        {"tools": "tools", "finalize": "finalize", END: END},
+    )
     workflow.add_edge("tools", "agent")
+    workflow.add_edge("finalize", END)
 
     _graph = workflow.compile()
     return _graph
@@ -305,6 +391,7 @@ async def stream_agent_response(
     user_message: str,
     chat_history: list[dict],
     user_profile: dict,
+    user_id: str = "",
 ) -> AsyncIterator[str]:
     """
     Yields Server-Sent Event data strings.
@@ -315,6 +402,8 @@ async def stream_agent_response(
       {"type": "done",       "data": {"answer": "...", "sources": [...]}}
       {"type": "error",      "data": {"message": "..."}}
     """
+    # Bind the authenticated user into request context for server-side tools.
+    current_user_id.set(user_id)
 
     # Convert stored history to LangChain messages
     lc_history: list[BaseMessage] = []
@@ -363,11 +452,16 @@ async def stream_agent_response(
             return
 
     # For tool-using queries, run the LangGraph agent
+    max_rounds = get_settings().agent_max_tool_rounds
     initial_state: AgentState = {
         "messages": lc_history + [HumanMessage(content=user_message)],
         "user_profile": user_profile,
+        "user_id": user_id,
         "sources": [],
         "final_answer": "",
+        "called_tools": [],
+        "tool_rounds": 0,
+        "max_tool_rounds": max_rounds,
     }
 
     graph = get_graph()
@@ -378,17 +472,19 @@ async def stream_agent_response(
         async for event in graph.astream_events(
             initial_state,
             version="v2",
-            config={"recursion_limit": get_settings().agent_max_iterations},
+            # Backstop above the round-based finalize (which triggers first);
+            # the force-finalize path, not this limit, is what makes it converge.
+            config={"recursion_limit": 2 * max_rounds + 6},
         ):
             kind = event.get("event")
 
             if kind == "on_chat_model_stream":
-                # Allowlist: stream ONLY the top-level agent node's tokens.
-                # Nested LLM calls (the retriever's multi-query expansion inside
-                # the lookup_documentation tool, tagged node "tools", and any
-                # untagged nested stream) are suppressed so they cannot leak
-                # into the visible answer (F-2).
-                if event.get("metadata", {}).get("langgraph_node") != "agent":
+                # Allowlist: stream ONLY answer-producing node tokens (the agent
+                # node and the forced finalize node). Nested LLM calls (the
+                # retriever's multi-query expansion inside lookup_documentation,
+                # tagged node "tools", or any untagged nested stream) are
+                # suppressed so they cannot leak into the visible answer (F-2).
+                if event.get("metadata", {}).get("langgraph_node") not in ("agent", "finalize"):
                     continue
                 token = event["data"]["chunk"].content
                 if token:
@@ -414,4 +510,10 @@ async def stream_agent_response(
 
     except Exception:
         logger.exception("Agent stream error")
-        yield f"data: {json.dumps({'type': 'error', 'data': {'message': _GENERIC_ERROR}})}\n\n"
+        # F1.5-2: if a real answer already streamed, finish gracefully with a
+        # done event (carrying whatever sources were captured) instead of
+        # flipping a good answer to an error. Only a pre-answer failure errors.
+        if full_answer.strip():
+            yield f"data: {json.dumps({'type': 'done', 'data': {'answer': full_answer, 'sources': tool_sources}})}\n\n"
+        else:
+            yield f"data: {json.dumps({'type': 'error', 'data': {'message': _GENERIC_ERROR}})}\n\n"

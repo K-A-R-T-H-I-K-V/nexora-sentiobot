@@ -6,12 +6,16 @@ Tools are imported and registered in agent.py.
 """
 
 from __future__ import annotations
+import logging
 import uuid
 import json
 from datetime import datetime, timedelta
 from langchain.tools import tool
 
 import backend.services.database as db
+from backend.core.request_context import current_user_id
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -91,7 +95,7 @@ async def check_warranty_status(serial_number: str) -> str:
 # ---------------------------------------------------------------------------
 
 @tool
-async def create_support_ticket(conversation_summary: str, user_id: str = "guest") -> str:
+async def create_support_ticket(conversation_summary: str) -> str:
     """
     Escalate an unresolved issue by creating a human-agent support ticket.
     Use this ONLY when:
@@ -99,8 +103,18 @@ async def create_support_ticket(conversation_summary: str, user_id: str = "guest
       (b) lookup_documentation returned no useful answer.
     Pass a brief summary of the problem as the argument.
     """
+    # The real authenticated user_id comes from request context (F1.5-3), never
+    # from the model. The model does not know the user's UUID; a made-up value
+    # would fail the users foreign key.
+    user_id = current_user_id.get()
+    if not user_id:
+        logger.error("create_support_ticket called with no authenticated user in context")
+        return (
+            "I could not create a support ticket because your session could not "
+            "be verified. Please sign in again or contact support directly."
+        )
+
     ticket_id = f"TICKET-{uuid.uuid4().hex[:6].upper()}"
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     try:
         db.create_ticket(
@@ -109,11 +123,16 @@ async def create_support_ticket(conversation_summary: str, user_id: str = "guest
             ticket_id=ticket_id,
         )
     except Exception:
-        pass  # Degrade gracefully — still return ticket ID to user
+        # Do NOT claim success on a failed write (F1.5-3): that is a visible lie
+        # and leaves nothing for a human to action. Report the failure honestly.
+        logger.exception("create_ticket failed for user %s", user_id)
+        return (
+            "I was unable to create a support ticket right now. Please try again "
+            "in a moment, or contact support directly if it keeps failing."
+        )
 
     return (
-        f"✅ Support ticket created. A human agent will be in touch within 24 hours.\n\n"
-        f"- **Ticket ID:** `{ticket_id}`\n"
-        f"- **Logged at:** {timestamp}\n\n"
+        f"✅ Support ticket created. A human agent will follow up within 24 hours.\n\n"
+        f"- **Ticket ID:** `{ticket_id}`\n\n"
         "Please keep your ticket ID for reference."
     )

@@ -185,7 +185,7 @@ async def chat_stream(
     async def generate():
         nonlocal final_answer_parts, sources
 
-        async for sse_data in stream_agent_response(req.message, history, user_profile):
+        async for sse_data in stream_agent_response(req.message, history, user_profile, user_id):
             out = sse_data
 
             # Parse SSE to capture final answer for persistence and to thread

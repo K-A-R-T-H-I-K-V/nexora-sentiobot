@@ -50,9 +50,10 @@ class Settings(BaseSettings):
     # Gemini (kept selectable via LLM_PROVIDER=gemini)
     google_api_key: str = ""
     gemini_model: str = "gemini-2.0-flash"
-    # Hard cap on agent tool-loop steps (LangGraph recursion limit); a runaway
-    # loop must not burn the Groq free-tier daily quota.
-    agent_max_iterations: int = 8
+    # Max tool ROUNDS before the graph force-finalizes (answers without tools).
+    # This, together with tool-call dedupe, makes the tool path converge instead
+    # of looping on repeated calls and burning the Groq free-tier daily quota.
+    agent_max_tool_rounds: int = 4
 
     # --- Supabase ---
     supabase_url: str = ""

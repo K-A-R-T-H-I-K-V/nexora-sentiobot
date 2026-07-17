@@ -705,6 +705,88 @@ STEP 3 UPDATE (live retest after the dev restored infra):
   elevated diskpart compact (handed to the dev). backend/.env reorganized
   into neat labeled sections (values preserved; gitignored, not committed).
 
+### Increment 1.5 - GROQ + REVIEWER FIXES (builder, 2026-07-17) - GATE MET
+
+Commits on v2-fullstack:
+- 4f66004 docs(status): reviewer verdict + planner ratification committed;
+  the two ratified DECISIONS and the new forward tasks appended under their
+  canonical headers.
+- 7c5c298 feat(backend): LLM migrated to Groq behind an LLM_PROVIDER factory;
+  F-1 error sanitization; F-2 allowlist token filter; agent max-iterations
+  cap; CPU-only torch pin.
+- 124f4d4 fix(backend): F-3 persist user message + conversation on cache hit.
+- d36f522 docs(readme): F-4 correctness trim of the false v1 body claims.
+
+What shipped (all MUST, SHOULD, and LOW items of the ratified kickoff):
+- MUST provider abstraction + Groq: get_llm() is a factory keyed on
+  LLM_PROVIDER ("groq" default, "gemini" still selectable). ChatGroq, model
+  llama-3.3-70b-versatile, temperature 0, max_output_tokens 2048,
+  GROQ_API_KEY from env. Embeddings (MiniLM) and Chroma + BM25 retrieval
+  untouched, as ratified.
+- MUST F-1: provider errors are never serialized to the client; the real
+  exception is logged server-side and the client receives one generic
+  message.
+- SHOULD F-2: token suppression is now the documented allowlist
+  (langgraph_node == "agent"), so untagged or future nested model streams
+  cannot leak into the answer.
+- SHOULD F-3: cache hits now resolve/create the conversation, persist both
+  messages, log analytics, and thread interaction_id (supersedes N-4).
+- SHOULD agent max-iterations: LangGraph recursion_limit from
+  AGENT_MAX_ITERATIONS (default 8), so a runaway tool loop cannot burn the
+  Groq free-tier daily quota.
+- SHOULD CPU-only torch: torch==2.10.0+cpu via the PyTorch CPU index.
+- LOW F-4: the false README body lines (Streamlit agent,
+  ConversationBufferWindowMemory, analytics.log/dashboard.py, AgentExecutor
+  self-correction, app.py/dashboard.py/mock_db.py tree) replaced with what
+  the code does. Full rewrite stays P6.
+- LOW secrets hygiene: refs/original/* backups pruned, reflog expired, gc'd;
+  commit 02b6865 no longer exists in the object DB; no tracked .env in any
+  ref; origin/main and origin/v2-fullstack carry no key. Full
+  `gitleaks detect` (all refs) = "no leaks found", exit 0.
+
+ENUMERATION CATCH (surfaced, not silently absorbed): langchain-groq 1.1.3
+pulls langchain-core 1.4.9, a MAJOR bump that breaks the pinned
+langgraph 0.2.38 / langchain 0.3.3 stack the reviewer validated. Pinned the
+compatible set instead: langchain-groq==0.2.5 with langchain-core==0.3.63
+(still <0.4). Re-verified the whole stack imports, all four tools bind, and
+the graph builds.
+
+GATE (every Increment 1 LLM-dependent gate re-run ON GROQ; 15/15 automated
+checks passed, plus F-1 and the container):
+- RAG route: streams a real grounded answer, 18 sources, cites [Source N],
+  interaction_id in done. PASS.
+- Tool route (doc question): calls lookup_documentation, answers grounded and
+  cited ("water damage is not covered [Source 3]"), 16 sources populated.
+  PASS. This closes the reviewer's P-1: the unification and the token
+  suppression are now verified live, not just structurally.
+- Tool route (personalized): calls check_warranty_status, coherent answer, no
+  raw tool-output overwrite. PASS.
+- F-2 suppression under Groq streaming-with-tools: no nested multi-query or
+  raw-JSON tokens in any visible answer. PASS.
+- Feedback writes a DB row: POST /feedback 200 and analytics positive went
+  0 -> 1 against live Supabase. PASS (closes Increment 1 gate 5).
+- F-3 cache hit: re-ask returned cached=true with interaction_id, and the
+  analytics total incremented (3 -> 4), proving the turn persisted. PASS.
+- F-1 forced provider error: with a deliberately invalid Groq key the server
+  logged the full 401 "Invalid API Key" while the client received exactly
+  "The assistant is temporarily unavailable. Please try again in a moment."
+  with no status code, provider name, quota body, or URL. PASS.
+- Container chat on the slimmed image: image 3.2GB (was ~13GB), torch
+  2.10.0+cpu with no nvidia/cudnn/nccl wheels; container healthy, running
+  `uvicorn backend.api.main:app`; login 200 and a real Groq chat streamed a
+  grounded answer citing [Source 1] with 19 sources. PASS (closes Increment 1
+  gate 7 runtime).
+- Byte-compile of all changed modules clean.
+
+NOT DONE (deliberately, per the kickoff): no latency instrumentation. That is
+Increment 2 (P1 baseline on Groq).
+
+Recipe note for the baselines: provider=groq, model=llama-3.3-70b-versatile,
+temperature=0, max_output_tokens=2048, langchain-groq==0.2.5,
+langchain-core==0.3.63, retrieval unchanged (Chroma k=5 + BM25 0.4/0.6 in an
+EnsembleRetriever wrapped by MultiQueryRetriever), embeddings
+all-MiniLM-L6-v2. Pin these in every results file.
+
 ---
 
 ## >>> ACTIVE KICKOFF: Increment 1 - FOUNDATION (BUILDER, batched single pass)
@@ -1129,3 +1211,73 @@ and proceed to Increment 2 (P1 latency baseline on Groq).
   ranked; P6 public demo NOT blocked (seeded guest login exists).
 - CPU-only torch / image slim -> pulled into 1.5; rest of container opt P5.
 - Cost guards (token caps, bounded memory) -> P4; only agent max-iters in 1.5.
+
+---
+
+## BUILDER MESSAGE (Increment 1.5 complete, 2026-07-17)
+
+To the PLANNER and the next REVIEWER, via the dev.
+
+STATUS: Increment 1.5 is COMPLETE and its gate is MET. Every MUST, SHOULD, and
+LOW item in the ratified kickoff shipped, and every Increment 1 LLM-dependent
+gate that was blocked by dead infra has now been re-run and PASSED on Groq.
+Commits: 4f66004, 7c5c298, 124f4d4, d36f522 (full detail and the verified gate
+list are in the INCREMENT LOG entry "Increment 1.5"). The branch is NOT pushed
+yet, per the standing ask-before-push rule.
+
+THE HEADLINE: the substrate is alive. Gemini's free tier returned 429 with
+free_tier limit 0 before a single message; on Groq (llama-3.3-70b-versatile,
+temperature 0) both answer routes now stream real, grounded, cited answers.
+The reviewer's P-1 (the highest-risk unverified path: tool-path grounding,
+non-empty sources, token suppression, feedback DB write, container chat) is
+now CLOSED by live evidence, not structure:
+- tool route calls lookup_documentation and answers "water damage is not
+  covered [Source 3]" with 16 sources;
+- feedback wrote a real Supabase row (analytics positive 0 -> 1);
+- container chat works on a 3.2GB image (was ~13GB);
+- a forced 401 leaks nothing to the client (F-1).
+
+WHAT I WANT THE REVIEWER TO ATTACK (in priority order):
+1. F-1, the P2 you raised. Try to make ANY provider/internal detail reach the
+   client: bad key, rate limit, timeout, tool exception, recursion-limit
+   breach. The generic string is in agent.py (_GENERIC_ERROR); confirm no
+   other path serializes str(e). Note main.py passes agent SSE through
+   unchanged, so agent.py is the choke point; verify that is actually true.
+2. F-2 allowlist. I switched to `langgraph_node == "agent"` as ratified and
+   verified no leak under Groq streaming-with-tools. Your own warning applies
+   in reverse now: if a real agent-node stream ever arrives untagged, the
+   allowlist SUPPRESSES the answer instead of leaking. It did not happen on
+   Groq across 6 live chats, but please probe it (multi-tool turns, a
+   recursion-limit breach, a tool that errors mid-stream).
+3. F-3 cache-hit persistence. Verified: cached=true, interaction_id present,
+   analytics total incremented. Probe multi-turn: does the cached turn appear
+   in the sidebar/history and feed the next turn's context correctly? Also
+   whether a cache hit on a NEW conversation creates a sensible title.
+4. The dependency pin. langchain-groq 1.1.3 silently pulls langchain-core
+   1.4.9 and breaks the langgraph 0.2.38 stack; I pinned langchain-groq==0.2.5
+   + langchain-core==0.3.63 instead. Please confirm a FRESH venv from
+   requirements.txt resolves cleanly and the app boots (this is the one change
+   most likely to bite a cold environment).
+5. P-2 remains true and unfixed by design: tool-path grounding depends on the
+   model CHOOSING to call lookup_documentation. On Groq it did so on every
+   doc-ish probe I ran, but that is not a guarantee. The P2 eval must measure
+   it rather than assume it.
+
+FLAGS / HONEST GAPS:
+- google-genai is still unpinned (N-3). Gemini is now a fallback path only,
+  but the pin belongs in the P1 recipe work.
+- Nexora-Assets.zip (66MB) still bloats the lineage; cleanup not attempted.
+- Groq free tier is roughly 30 RPM. The agent max-iterations cap is in, but
+  per-request token caps and bounded memory remain P4. The P2 harness will
+  need batching/sleeps to stay inside the daily budget (planner already
+  pinned this).
+- No unit tests still; check_cache_privacy remains the only executable check.
+
+FOR THE PLANNER: nothing here contradicts the ratified plan, and I did not
+touch latency instrumentation. The provider, model, params, and the exact
+langchain pin set are recorded in the INCREMENT LOG "Recipe note" so the
+Increment 2 (P1 latency) and Increment 3 (P2 quality) baselines can stamp them
+verbatim. My only forward-looking observation: now that Groq is live and fast,
+the MultiQueryRetriever's extra LLM round-trip (Rank 1 in the improvement
+list) is measurable the moment the P1 harness exists; it remains gated behind
+the baseline as ratified.

@@ -1,0 +1,35 @@
+# Core
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+pydantic==2.8.2
+pydantic-settings==2.4.0
+
+# Auth
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+python-multipart==0.0.9
+
+# LangChain / LangGraph
+langchain==0.3.3
+langchain-core==0.3.10
+langchain-community==0.3.2
+langchain-google-genai==2.0.1
+langchain-huggingface==0.1.0
+langchain-chroma==0.1.4
+langgraph==0.2.38
+google-genai
+
+# Vector / Retrieval
+chromadb==0.5.15
+sentence-transformers==3.1.1
+rank-bm25==0.2.2
+
+# Database
+supabase==2.9.0
+
+# Utilities
+python-dotenv==1.0.1
+pandas==2.2.3
+
+# Optional: Redis caching
+redis==5.1.1

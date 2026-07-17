@@ -1,0 +1,13 @@
+{
+  "generated_at": "2026-03-08T09:44:12.164930",
+  "parent_count": 85,
+  "summary_count": 85,
+  "vector_db_hash": "a5ec4c0ef0e1d906f62168116b2c17ce",
+  "data_sources": [
+    "faqs.csv",
+    "lumiglow_smart_lighting_manual.md",
+    "nexora_thermostat_pro_manual.md",
+    "policies.md",
+    "visionsphere_360_manual.md"
+  ]
+}

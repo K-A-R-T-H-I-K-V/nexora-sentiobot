@@ -1,0 +1,18 @@
+# Virtual Environments & Cache
+venv/
+venv
+__pycache__/
+*.pyc
+
+# Secrets
+.env
+
+# RAG Data & Vector Databases (Let Docker Compose volume mount these instead)
+vector_db/
+parent_docstore/
+summaries/
+parents.pkl
+ingest_manifest.json
+
+# Misc
+.git/

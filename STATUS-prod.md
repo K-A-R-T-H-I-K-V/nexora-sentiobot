@@ -967,6 +967,56 @@ BOTH baselines (Increment 2 latency/calls/tokens + this quality set).
 
 ---
 
+### Increment 4 - P3 Rank 1: CUT MULTI-QUERY, measured (builder, 2026-07-18) - GATE MET
+
+Commits on v2-fullstack: (this update).
+
+Two locks first (R3-1, R3-2): golden_set_v1.json now carries items_sha256
+(d81f1e31...); backend/scripts/_golden.py load_frozen() re-computes and asserts
+it at every eval start, and the retrieval + LLM harnesses use it (freeze is now
+enforced, not self-declared). The Windows stamp is fixed (hardware_stamp() now
+reports "Windows 11 (build 10.0.26200)" instead of the platform.release() "10").
+
+Change (reversible switch, not a deletion): config `use_multiquery: bool = False`
+(env USE_MULTIQUERY). get_retriever() returns the base ensemble (BM25 0.4 +
+vector 0.6) by default and only wraps it in MultiQueryRetriever when the flag is
+set. Verified: default retriever type is EnsembleRetriever.
+
+DELTA (controlled A/B on the RAG answer path; same generator + prompt, only the
+retriever differs; 5 questions from the frozen RAGAS subset; results/
+increment4_delta.md + .json, commit-stamped, tokens logged ~37K):
+- LLM calls / doc answer: 2 -> 1 (definitive).
+- Tokens / answer: 2690 -> 1251 (-53%).
+- Generation time: 5777 -> 1868 ms (-68%, TTFT proxy; free-tier/small-N caveat).
+- Retrieval time: 820 -> 46 ms (the multi-query rephrasing LLM call was ~all of it).
+- Retrieval hit@5: 0.913 -> 0.913 (frozen Increment 3 deterministic; identical).
+
+ANSWER CHECK (the gate's requirement, not just retrieval membership): read all 5
+before/after answer pairs. Every after-answer is correct, grounded, and cites
+its source (5/5). The weak-8b faithfulness metric reported 0.81 -> 0.55, but that
+is a JUDGE ARTIFACT: two spurious 0.0 scores on demonstrably-correct after-
+answers (doc-12 IP65, pol-02 water-damage exclusion), the same failure mode
+disclosed for doc-14 in Increment 3. No MATERIAL faithfulness regression on
+inspection. Quality HELD. The raw number, the refutation, and the answer pairs
+are all committed so the reviewer can check the judgment.
+
+DECISION: ship the cut as DEFAULT. Multi-query is retained behind the flag
+(reversible, A/B-able), so gating it on low-confidence retrieval is one line away
+if the reviewer's independent read disagrees. Per the ratified guard, no gated
+variant was built because the answer check found no material regression.
+
+GATE: delta table committed on the same frozen inputs; LLM calls/doc 2 -> 1 and
+tokens/answer down measurably; TTFT-proxy delta reported with the noise caveat;
+retrieval hit-rate unchanged AND the answer check shows no material faithfulness
+regression (weak-judge false alarm refuted by reading the answers); multi-query
+still togglable; freeze hash in place; stamp fixed; LEARNINGS appended. MET.
+Reviewer re-runs the delta next; then P4 hardening anchored on the inj-01 fix.
+
+Small-corpus caveat retained: multi-query's value tends to grow with corpus
+size; "no gain here" may not generalize. Re-measure if the corpus grows (logged).
+
+---
+
 ## >>> ACTIVE KICKOFF: Increment 1 - FOUNDATION (BUILDER, batched single pass)
 
 One coherent pass: make the real path runnable, correct, and safe to

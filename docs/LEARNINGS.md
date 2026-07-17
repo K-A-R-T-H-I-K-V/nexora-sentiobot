@@ -211,6 +211,55 @@ the durable answer is to lead with the free deterministic metric and let the
 paid/LLM metric trickle in across days. The backbone of a good eval is the part
 that does not depend on a rate limit.
 
+### Increment 4 - The first optimization: cut the extra call, but check the ANSWER
+With both baselines frozen, we finally optimized. The target: the multi-query
+retriever, which spends an extra LLM call rephrasing your question three ways
+before searching. Increment 2 showed it costs one of two LLM calls per doc
+answer; Increment 3 showed it added zero retrieval hit-rate on our corpus. So we
+made the base ensemble the default and put multi-query behind a config flag.
+
+The measured delta (same questions, same generator, only the retriever changed):
+LLM calls per doc answer 2 to 1, tokens per answer down ~53%, generation time
+down ~68%, retrieval hit@5 unchanged. A clean win.
+
+The one intuition to carry from this increment: IDENTICAL RETRIEVAL MEMBERSHIP
+DOES NOT MEAN IDENTICAL ANSWER. Even when both retrievers put the correct
+section in the top 5, the FULL set of retrieved chunks (the distractors around
+the right one) and their ORDER differ. That changed context is what the LLM
+actually reads, so the written answer can shift even when hit@5 is identical.
+This is why the gate demanded an ANSWER check, not just a retrieval-membership
+check. A senior engineer does not accept "the right document was retrieved" as
+proof the user got the right answer.
+
+And a plot twist that taught the deepest lesson. Our automated faithfulness
+metric (the weak 8B judge) reported a REGRESSION: the after-cut answers scored
+0.55 versus 0.81 before. If we had trusted the number, we would have blocked a
+good optimization. Instead we read the five actual before/after answer pairs.
+Every after-answer was correct, grounded, and cited its source; the "drop" was
+two spurious 0.0 scores the weak judge gave to two demonstrably-correct answers
+(the exact failure mode we had already disclosed in Increment 3). The lesson
+cuts both ways: a noisy metric can cry wolf, so when a cheap judge flags a
+regression, VERIFY it against the ground truth before you act; and equally, do
+not let a weak judge rubber-stamp a change either. The metric points you where
+to look; your eyes on the artifact make the call. We reported the raw number AND
+the refutation AND committed the answer pairs, so the reviewer can check our
+judgment rather than take our word.
+
+Two smaller habits worth stealing. We made the optimization a SWITCH, not a
+deletion: multi-query lives behind a flag, so if the reviewer disagrees, or the
+corpus grows and rephrasing starts earning its keep again, it is one config line
+to bring back, and A/B-able forever. And we turned the frozen eval set from a
+promise into an enforced invariant: a SHA256 of the questions is stored in the
+file and re-checked at the start of every eval run, so a silent future edit
+fails loudly instead of quietly corrupting a comparison.
+
+Carry-forward from Increment 3, worth restating because it matters: the
+adversarial cases in the golden set caught a REAL prompt-injection vulnerability
+(asked to print its system prompt, the agent complied and leaked its rules and
+the user's own profile), and a separate reviewer reproduced it live. Hostile
+test cases are not decoration; they are how you find the hole before an attacker
+does. That fix anchors the next phase (P4 hardening).
+
 ## Part 4 - Cross-cutting principles (the transferable lessons)
 
 1. Ground truth is the running code, not the README.

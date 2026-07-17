@@ -834,10 +834,23 @@ Explicitly NOT in this increment (gated, with reasons):
   refs, expire the reflog, and gc so `gitleaks detect --all` is clean. NOT
   done by the builder (it removes someone else's filter-branch safety
   backups; needs the dev's OK). (3) origin history is already clean of it.
-- DEAD CREDENTIALS / INFRA (BLOCKER, see INCREMENT LOG): Supabase project is
-  NXDOMAIN (recreate + reseed supabase/schema.sql) and the Google API key is
-  invalid (replace). Until fixed, gates 4/5 and container-runtime chat are
-  unverifiable and the live demo path is down.
+- DEAD CREDENTIALS / INFRA (partly resolved): Supabase RECREATED + reseeded
+  by the dev (login now works). Gemini remains blocked (see next item).
+- LLM PROVIDER MIGRATION Gemini -> Groq free tier [PENDING PLANNER
+  RATIFICATION, do not build until ratified]: Gemini's free tier is now
+  effectively unusable (keys expire / return 429 with free_tier limit: 0 on
+  gemini-2.0-flash before a single message), which blocks the free demo path
+  AND all P1/P2 baselining (you cannot baseline a system with no working
+  LLM). Proposal: swap get_llm() from ChatGoogleGenerativeAI to ChatGroq
+  (langchain-groq); GROQ_API_KEY already exists in .env; keep HuggingFace
+  MiniLM embeddings + ChromaDB retrieval unchanged; pick a tool-calling model
+  (candidate: llama-3.3-70b-versatile) at temperature 0 for eval
+  reproducibility. This is a FOUNDATION prerequisite (needed to run for free
+  at all), not a P3 optimization, so it does not violate measure-before-
+  optimize; but the P1/P2 baselines would then be established ON Groq.
+  Planner must ratify: (a) Groq as the provider, (b) the exact model + params,
+  (c) rate/cost guards for Groq's free-tier limits, (d) whether this reopens
+  Increment 1 / becomes Increment 1.5 before the latency/quality baselines.
 - CUDA torch image bloat -> P5: pin CPU-only torch (e.g. the
   +cpu wheel / torch CPU index) so the backend image is small enough for
   scale-to-zero deploy; the default Linux torch pulled ~900 MB of CUDA/cudnn.

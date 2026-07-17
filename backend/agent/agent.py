@@ -43,6 +43,7 @@ from langchain_community.retrievers import BM25Retriever
 from langchain.retrievers import EnsembleRetriever
 from langchain.retrievers.multi_query import MultiQueryRetriever
 from langchain_core.prompts import PromptTemplate
+from langchain_core.tools import tool
 from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
@@ -114,65 +115,63 @@ def get_retriever():
 
 
 # ---------------------------------------------------------------------------
-# RAG sub-chain (inline tool for lookup_documentation)
+# Shared retrieval
 # ---------------------------------------------------------------------------
-
-SYSTEM_PROMPT = """\
-You are SentioBot, a precise AI support agent for Nexora Electronics.
-
-## Core Rules
-1. Answer ONLY from the Provided Context below. Do not use outside knowledge.
-2. If the context does not contain the answer, say so honestly.
-3. Be concise and use Markdown formatting.
-4. Cite sources as [Source N] inline.
-5. After answering a product question, proactively offer the next helpful action \
-   (e.g. warranty check, support ticket).
-
-## Provided Context
-{context}
-"""
-
-RAG_CITATION_PROMPT = """\
-Answer the question using ONLY the provided context.
-Include inline citations like [Source 1], [Source 2].
-End with a "**Sources:**" section listing each source used.
-
-Context:
-{context}
-
-Question: {question}
-"""
+# Both answer paths ground on the SAME retrieved context: the direct RAG
+# stream (below) and the lookup_documentation tool used by the graph path.
+# Neither synthesises here; the caller's LLM writes the single streamed answer.
 
 
-async def _run_rag(query: str) -> tuple[str, list[dict]]:
-    """Returns (formatted_answer_str, sources_list)."""
-    retriever = get_retriever()
-    docs: list[Document] = await retriever.ainvoke(query)
-
-    if not docs:
-        return "I couldn't find relevant information in the documentation.", []
-
-    context_str = "\n\n".join(
-        f"[Source {i+1}] ({doc.metadata.get('source','?')} | {doc.metadata.get('section_title','?')})\n"
-        f"{doc.page_content}"
-        for i, doc in enumerate(docs)
-    )
-
-    llm = get_llm()
-    messages = [
-        SystemMessage(content=SYSTEM_PROMPT.format(context=context_str)),
-        HumanMessage(content=query),
-    ]
-
-    response = await llm.ainvoke(messages)
-    sources = [
+def _format_sources(docs: list[Document]) -> list[dict]:
+    return [
         {
             "source": d.metadata.get("source", "N/A"),
             "section": d.metadata.get("section_title", "N/A"),
         }
         for d in docs
     ]
-    return response.content, sources
+
+
+async def _retrieve_context(query: str) -> tuple[str, list[dict]]:
+    """Retrieve docs and return (formatted_context_str, sources_list)."""
+    retriever = get_retriever()
+    docs: list[Document] = await retriever.ainvoke(query)
+    if not docs:
+        return "", []
+
+    context_str = "\n\n".join(
+        f"[Source {i+1}] ({d.metadata.get('source','?')} | {d.metadata.get('section_title','?')})\n"
+        f"{d.page_content}"
+        for i, d in enumerate(docs)
+    )
+    return context_str, _format_sources(docs)
+
+
+@tool
+async def lookup_documentation(query: str) -> str:
+    """Search Nexora product manuals and policy documentation to answer a
+    question. Use this FIRST for any product, feature, setup, troubleshooting,
+    policy, or warranty-policy question. Returns retrieved documentation
+    context tagged with [Source N]; answer using ONLY that context and cite
+    the sources inline as [Source N]."""
+    context_str, sources = await _retrieve_context(query)
+    return json.dumps({"context": context_str, "sources": sources})
+
+
+def _tool_output_text(output) -> str:
+    """Best-effort extraction of a tool's text output (ToolMessage or raw)."""
+    content = getattr(output, "content", None)
+    return content if isinstance(content, str) else str(output)
+
+
+def _extract_tool_sources(output) -> list[dict]:
+    """Pull the sources list out of lookup_documentation's JSON output."""
+    try:
+        data = json.loads(_tool_output_text(output))
+        srcs = data.get("sources", [])
+        return srcs if isinstance(srcs, list) else []
+    except Exception:
+        return []
 
 
 # ---------------------------------------------------------------------------
@@ -190,7 +189,7 @@ class AgentState(TypedDict):
 # Graph Nodes
 # ---------------------------------------------------------------------------
 
-TOOLS = [check_order_status, check_warranty_status, create_support_ticket]
+TOOLS = [lookup_documentation, check_order_status, check_warranty_status, create_support_ticket]
 TOOL_NODE = ToolNode(TOOLS)
 
 
@@ -215,18 +214,19 @@ You are SentioBot, a helpful and precise AI support agent for Nexora Electronics
 {profile_section}
 
 ## Behaviour Rules
-1. PROACTIVE: If the user asks about a product and you have its serial number above, \
-   call check_warranty_status immediately — do NOT ask for it.
-2. MEMORY: Do not ask for info the user already gave in this conversation.
-3. RAG FIRST: Use lookup_documentation for all product/policy questions before \
-   calling other tools.
+1. RAG FIRST: For any product, feature, setup, troubleshooting, policy, or \
+   warranty-policy question, call lookup_documentation and answer ONLY from \
+   the context it returns, citing sources inline as [Source N]. If the context \
+   is empty, say so honestly and offer to raise a support ticket.
+2. PROACTIVE: If the user asks about a product and you have its serial number \
+   above, call check_warranty_status immediately; do NOT ask for it.
+3. MEMORY: Do not ask for info the user already gave in this conversation.
 4. ESCALATE ONLY IF NEEDED: Use create_support_ticket only when documentation \
-   fails or user explicitly asks for a human.
+   does not resolve the issue or the user explicitly asks for a human.
 5. FORMAT: Use Markdown. Be concise. Offer the logical next action at the end.
 
-Available tools: check_order_status, check_warranty_status, create_support_ticket.
-For documentation questions, respond directly using your knowledge — \
-your context already includes the retrieved documents.
+Available tools: lookup_documentation, check_order_status, \
+check_warranty_status, create_support_ticket.
 """
 
 
@@ -307,23 +307,12 @@ async def stream_agent_response(
     # For pure documentation queries, stream tokens directly via RAG
     if not is_tool_query:
         try:
-            retriever = get_retriever()
-            docs = await retriever.ainvoke(user_message)
-            sources = [
-                {"source": d.metadata.get("source", "N/A"),
-                 "section": d.metadata.get("section_title", "N/A")}
-                for d in docs
-            ]
+            context_str, sources = await _retrieve_context(user_message)
 
-            if not docs:
+            if not context_str:
                 yield f"data: {json.dumps({'type': 'token', 'data': 'I could not find relevant documentation for your query. Would you like me to raise a support ticket?'})}\n\n"
                 yield f"data: {json.dumps({'type': 'done', 'data': {'answer': '', 'sources': []}})}\n\n"
                 return
-
-            context_str = "\n\n".join(
-                f"[Source {i+1}] ({d.metadata.get('source','?')} | {d.metadata.get('section_title','?')})\n{d.page_content}"
-                for i, d in enumerate(docs)
-            )
 
             llm = get_llm()
             sys_content = (
@@ -357,12 +346,19 @@ async def stream_agent_response(
 
     graph = get_graph()
     full_answer = ""
+    tool_sources: list[dict] = []
 
     try:
         async for event in graph.astream_events(initial_state, version="v2"):
             kind = event.get("event")
 
             if kind == "on_chat_model_stream":
+                # Stream only the top-level agent node's tokens. Nested LLM
+                # calls (the retriever's multi-query expansion inside the
+                # lookup_documentation tool) also surface here under the
+                # "tools" node and must not leak into the visible answer.
+                if event.get("metadata", {}).get("langgraph_node") == "tools":
+                    continue
                 token = event["data"]["chunk"].content
                 if token:
                     full_answer += token
@@ -373,11 +369,17 @@ async def stream_agent_response(
 
             elif kind == "on_tool_end":
                 output = event["data"].get("output", "")
-                yield f"data: {json.dumps({'type': 'tool_end', 'data': {'name': event['name'], 'output': str(output)}})}\n\n"
-                # Overwrite full_answer with tool result for done event
-                full_answer = str(output)
+                # Capture retrieved sources from the documentation tool for the
+                # done event. Do NOT overwrite the streamed answer with raw tool
+                # output; the agent node writes the final answer.
+                if event.get("name") == "lookup_documentation":
+                    tool_sources = _extract_tool_sources(output)
+                    display = "Retrieved documentation context."
+                else:
+                    display = _tool_output_text(output)
+                yield f"data: {json.dumps({'type': 'tool_end', 'data': {'name': event['name'], 'output': display}})}\n\n"
 
-        yield f"data: {json.dumps({'type': 'done', 'data': {'answer': full_answer, 'sources': []}})}\n\n"
+        yield f"data: {json.dumps({'type': 'done', 'data': {'answer': full_answer, 'sources': tool_sources}})}\n\n"
 
     except Exception as e:
         logger.exception("Agent stream error")

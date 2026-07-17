@@ -33,7 +33,7 @@ from typing import Any
 
 import numpy as np
 
-from config import get_settings
+from backend.core.config import get_settings
 
 log = logging.getLogger(__name__)
 
@@ -59,8 +59,10 @@ def _normalise(text: str) -> str:
     return " ".join(text.lower().strip().split())
 
 
-def _sha256(text: str) -> str:
-    return hashlib.sha256(_normalise(text).encode()).hexdigest()
+def _cache_key(user_id: str, query: str) -> str:
+    # User-scoped: identical questions from different users never collide, so a
+    # personalized answer for one user is never served to another (privacy).
+    return hashlib.sha256(f"{user_id}\x00{_normalise(query)}".encode()).hexdigest()
 
 
 # ── Tier 1: In-process LRU ────────────────────────────────────────────────────
@@ -99,10 +101,11 @@ class _SemanticCache:
         self._queries:    list[str]         = []
         self._embeddings: list[np.ndarray]  = []
         self._answers:    list[str]         = []
+        self._users:      list[str]         = []
         self._max       = max_size
         self._threshold = threshold
 
-    def get(self, query: str) -> str | None:
+    def get(self, query: str, user_id: str) -> str | None:
         if not self._embeddings:
             return None
 
@@ -112,6 +115,10 @@ class _SemanticCache:
         normed = np.where(norms > 0, stored / norms, 0.0)
         q_norm = q_emb / (np.linalg.norm(q_emb) or 1.0)
         scores = normed @ q_norm                                 # (N,)
+
+        # Privacy scoping: only match against this user's own entries.
+        owner_mask = np.array([u == user_id for u in self._users])
+        scores = np.where(owner_mask, scores, -1.0)
         best   = int(np.argmax(scores))
 
         if scores[best] >= self._threshold:
@@ -120,15 +127,17 @@ class _SemanticCache:
             return self._answers[best]
         return None
 
-    def set(self, query: str, answer: str) -> None:
+    def set(self, query: str, answer: str, user_id: str) -> None:
         if len(self._queries) >= self._max:
             self._queries.pop(0)
             self._embeddings.pop(0)
             self._answers.pop(0)
+            self._users.pop(0)
         emb = np.array(_get_embedder().embed_query(_normalise(query)))
         self._queries.append(query)
         self._embeddings.append(emb)
         self._answers.append(answer)
+        self._users.append(user_id)
 
     @property
     def size(self) -> int:
@@ -171,11 +180,10 @@ def _get_redis():
 async def get_cached_response(user_id: str, query: str) -> str | None:
     """
     Returns cached answer string or None on cache miss.
-    Tries L1 -> L2 -> L3 in order.
-    user_id is accepted for API compatibility but not used in the cache key,
-    so identical questions from different users share the same cached answer.
+    Tries L1 -> L2 -> L3 in order. ALL tiers are scoped by user_id, so a
+    personalized answer for one user is never served to another.
     """
-    key = _sha256(query)
+    key = _cache_key(user_id, query)
 
     # ── L1: exact LRU ──
     hit = _lru.get(key)
@@ -183,8 +191,8 @@ async def get_cached_response(user_id: str, query: str) -> str | None:
         log.debug("L1 cache HIT")
         return hit
 
-    # ── L2: semantic similarity ──
-    hit = _semantic.get(query)
+    # ── L2: semantic similarity (this user's entries only) ──
+    hit = _semantic.get(query, user_id)
     if hit:
         _lru.set(key, hit)   # promote to L1 for the next exact match
         return hit
@@ -197,7 +205,7 @@ async def get_cached_response(user_id: str, query: str) -> str | None:
             if hit:
                 log.debug("L3 Redis cache HIT")
                 _lru.set(key, hit)
-                _semantic.set(query, hit)  # warm lower tiers too
+                _semantic.set(query, hit, user_id)  # warm lower tiers too
                 return hit
         except Exception as exc:
             log.warning("Redis get failed: %s", exc)
@@ -206,12 +214,12 @@ async def get_cached_response(user_id: str, query: str) -> str | None:
 
 
 async def set_cached_response(user_id: str, query: str, answer: str) -> None:
-    """Write answer to all available cache tiers."""
-    key = _sha256(query)
+    """Write answer to all available cache tiers, scoped to this user."""
+    key = _cache_key(user_id, query)
     ttl = getattr(get_settings(), "cache_ttl_seconds", 3600)
 
     _lru.set(key, answer)
-    _semantic.set(query, answer)
+    _semantic.set(query, answer, user_id)
 
     r = _get_redis()
     if r:
@@ -224,12 +232,14 @@ async def set_cached_response(user_id: str, query: str, answer: str) -> None:
 async def invalidate_user_cache(user_id: str) -> None:
     """
     Called on logout or profile change (kept for API compatibility).
-    L1/L2 are not user-scoped so only Redis cleanup is relevant here.
+    NOTE: L1/L2/L3 keys are now user-scoped but hashed, so they cannot be
+    enumerated per user. Redis keys are cleared wholesale here; a per-user
+    Redis prefix for targeted invalidation is a tracked FORWARD TASK.
     """
     r = _get_redis()
     if r:
         try:
-            async for key in r.scan_iter(f"*"):
+            async for key in r.scan_iter("*"):
                 await r.delete(key)
         except Exception as exc:
             log.warning("Redis invalidation failed: %s", exc)

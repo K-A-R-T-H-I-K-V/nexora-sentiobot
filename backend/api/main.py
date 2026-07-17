@@ -11,14 +11,14 @@ GET    /chat/conversations               → list user's conversations
 POST   /chat/conversations               → create new conversation
 GET    /chat/conversations/{id}/messages → load message history
 
-POST   /feedback/{interaction_id}        → thumbs up/down
+POST   /feedback                         → thumbs up/down (body: interaction_id, feedback)
 
 GET    /analytics/summary                → dashboard metrics (admin-only in prod)
 
-Deployment
+Deployment (run from the repository root so the `backend` package resolves)
 ----------
-  Local:      uvicorn main:app --reload --port 8000
-  Production: uvicorn main:app --host 0.0.0.0 --port $PORT --workers 2
+  Local:      uvicorn backend.api.main:app --reload --port 8000
+  Production: uvicorn backend.api.main:app --host 0.0.0.0 --port $PORT --workers 2
 """
 
 from __future__ import annotations
@@ -154,19 +154,26 @@ async def chat_stream(
         nonlocal final_answer_parts, sources
 
         async for sse_data in stream_agent_response(req.message, history, user_profile):
-            yield sse_data
+            out = sse_data
 
-            # Parse SSE to capture final answer for persistence
+            # Parse SSE to capture final answer for persistence and to thread
+            # the interaction_id into the done event so the client can submit
+            # feedback against it.
             try:
                 raw = sse_data.strip()
                 if raw.startswith("data: "):
                     payload = json.loads(raw[6:])
-                    if payload["type"] == "token":
+                    ptype = payload.get("type")
+                    if ptype == "token":
                         final_answer_parts.append(payload["data"])
-                    elif payload["type"] == "done":
+                    elif ptype == "done":
                         sources = payload["data"].get("sources", [])
+                        payload["data"]["interaction_id"] = interaction_id
+                        out = f"data: {json.dumps(payload)}\n\n"
             except Exception:
-                pass
+                out = sse_data
+
+            yield out
 
         # Persist assistant message after stream completes
         full_answer = "".join(final_answer_parts)
@@ -274,4 +281,4 @@ async def health():
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("backend.api.main:app", host="0.0.0.0", port=8000, reload=True)

@@ -137,28 +137,36 @@ def main():
     gold = json.load(open(REPO / "results/golden_set_v1.json", encoding="utf-8"))
     items = gold["items"]
     tok = login()
-    out = {"judge_model": JUDGE_MODEL, "generator": get_settings().groq_model,
-           "commit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=REPO).decode().strip(),
-           "note": "SECONDARY/indicative. RAGAS-style = custom weak-judge (8b grading 70b), not the ragas library.",
-           "completed": []}
+    out_path = REPO / "results/quality_llm.json"
+    if out_path.exists():
+        out = json.load(open(out_path, encoding="utf-8"))
+        out.pop("stopped_early", None)
+    else:
+        out = {"judge_model": JUDGE_MODEL, "generator": get_settings().groq_model,
+               "commit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=REPO).decode().strip(),
+               "note": "SECONDARY/indicative. RAGAS-style = custom weak-judge (8b grading 70b), not the ragas library.",
+               "completed": []}
+    out.setdefault("completed", [])
 
     try:
         # ---- 1) multi-query hit-rate reference (once) ----
-        retr = build_mq_retriever()
-        rvals = [it for it in items if it.get("acceptable_sources") and "turns" not in it]
-        hits = 0
-        for it in rvals:
-            docs = retr.invoke(it["question"])
-            hit = any(any(doc_matches(d.metadata or {}, d.page_content, a) for a in it["acceptable_sources"]) for d in docs[:K])
-            hits += 1 if hit else 0
-        out["multi_query_reference"] = {"n": len(rvals), "hit_rate_at_5": round(hits / len(rvals), 4),
-                                        "note": "full MultiQueryRetriever (adds 1 LLM call/query); compare to base-ensemble deterministic hit@5"}
-        out["completed"].append("multi_query_reference")
+        if "multi_query_reference" not in out["completed"]:
+            retr = build_mq_retriever()
+            rvals = [it for it in items if it.get("acceptable_sources") and "turns" not in it]
+            hits = 0
+            for it in rvals:
+                docs = retr.invoke(it["question"])
+                hit = any(any(doc_matches(d.metadata or {}, d.page_content, a) for a in it["acceptable_sources"]) for d in docs[:K])
+                hits += 1 if hit else 0
+            out["multi_query_reference"] = {"n": len(rvals), "hit_rate_at_5": round(hits / len(rvals), 4),
+                                            "note": "full MultiQueryRetriever (adds 1 LLM call/query); compare to base-ensemble deterministic hit@5"}
+            out["completed"].append("multi_query_reference")
 
         # ---- 2) tool-call correctness (sample) ----
-        SAMPLE = ["ord-01", "ord-06", "war-01", "war-03", "war-06", "tkt-01", "tkt-03", "tkt-05"]
-        tc = []
-        for it in [x for x in items if x["id"] in SAMPLE]:
+        if "tool_call_correctness" not in out["completed"]:
+          SAMPLE = ["ord-01", "ord-06", "war-01", "war-03", "war-06", "tkt-01", "tkt-03", "tkt-05"]
+          tc = []
+          for it in [x for x in items if x["id"] in SAMPLE]:
             ans, tools, met, err = chat(tok, it["question"])
             called = [t[0] for t in tools]
             right_tool = it["expected_tool"] in called
@@ -169,9 +177,9 @@ def main():
             tc.append({"id": it["id"], "expected_tool": it["expected_tool"], "called": called,
                        "tool_correct": right_tool, "args_correct": bool(right_tool and args_ok)})
             time.sleep(1)
-        out["tool_call_correctness"] = {"n": len(tc), "tool_correct": sum(r["tool_correct"] for r in tc),
-                                        "args_correct": sum(r["args_correct"] for r in tc), "rows": tc}
-        out["completed"].append("tool_call_correctness")
+          out["tool_call_correctness"] = {"n": len(tc), "tool_correct": sum(r["tool_correct"] for r in tc),
+                                          "args_correct": sum(r["args_correct"] for r in tc), "rows": tc}
+          out["completed"].append("tool_call_correctness")
 
         # ---- 3) RAGAS-style faithfulness + relevancy (8 doc/policy Q, judge 2x) ----
         RAGAS_IDS = ["doc-03", "doc-09", "doc-12", "doc-14", "pol-02", "pol-03", "pol-05", "pol-07"]

@@ -145,6 +145,72 @@ baseline for measuring deltas, not a published claim):
 - Cache hit: ~1.4s, 0 LLM calls, ~0 tokens.
 - Plus a one-time ~22s cold start on the first request (lazy-loaded models).
 
+### Increment 3 - The quality baseline: freeze the ruler before you measure
+Increment 2 measured how FAST and how EXPENSIVE the system is. But cutting the
+multi-query retriever (the plan) might make answers WORSE, and speed says
+nothing about worse. So before touching it, we built a way to measure QUALITY:
+a golden set and a scoring recipe, frozen.
+
+What a golden set is, and why frozen. It is a fixed list of questions, each with
+the answer you expect and the source that should back it. Freezing it (and the
+corpus with it) matters for one non-obvious reason: if the eval set can change
+after you see results, you will, even unconsciously, shop for the version that
+flatters your change. A frozen ruler cannot be bent to fit the thing it
+measures. We proposed 50 questions, the planner ratified the exact composition,
+then it was frozen with a version and a commit hash. That ceremony is the point.
+
+Why the deterministic metric LEADS and the LLM metric only supports. We used
+two kinds of metric. Hit-rate@k (did the correct source appear in the top k
+retrieved?) is computed with local math on embeddings and keyword scores: it
+costs zero tokens, and it is BIT-STABLE, meaning two runs are identical to the
+decimal. RAGAS-style faithfulness (does an LLM judge think the answer is
+supported by the retrieved text?) needs an LLM to grade, which is slow, costs
+tokens, and is NOISY. We deliberately made the deterministic metric the headline
+and the LLM-judged one "indicative." The intuition a senior engineer carries: a
+cheap, reproducible, boring number beats an expensive, wobbly, impressive one,
+because you will re-run it a hundred times as you optimize, and you need it to
+mean the same thing every time.
+
+The weak-judge limitation, named on purpose. Our free judge is an 8B model
+grading a 70B model's answers. A smaller model judging a larger one is a WEAK
+judge; it can be wrong about what "supported" means. We wrote that limitation
+into the recipe rather than hiding it. Rejected option: use the 70B model to
+judge its own output. That was rejected because a model grading itself has a
+self-preference bias (it likes its own style), which is worse than a weak but
+independent judge.
+
+The headline finding, and the intuition behind it. The base retrieval (keyword
++ vector) scored hit@5 = 0.91. The full multi-query retriever, which spends an
+extra LLM call to rephrase the question three ways, scored hit@5 = 0.91 too. The
+extra call bought NOTHING on this set. Why would that be? On a small, clean
+corpus, the right section is already findable by the plain hybrid search;
+rephrasing helps most when the corpus is large and messy and the user's wording
+misses the document's wording. This is the exact evidence Increment 4 needs: we
+can likely delete that call (halving tokens per answer, per Increment 2) with no
+retrieval loss. One honest caveat we recorded: hit@5 membership being unchanged
+does not prove the ANSWER is unchanged, which is why the faithfulness read still
+matters, and why we did not declare victory.
+
+Leakage, the subtle trap. Leakage is letting the test set influence the thing
+being tested. Two rules kept us clean: (1) we did NOT tune retrieval weights or
+chunking to make the golden set score better; that would be teaching to the
+test. (2) The list of acceptable sources for each question was enumerated from
+the CORPUS (what genuinely answers it), never from watching what the system
+retrieved; otherwise we would just be rewarding the system for whatever it
+happened to return.
+
+Two smaller lessons worth keeping. A "frozen" expected answer that depends on
+today's date is not actually frozen: our warranty answers (active vs expired)
+shift over time, so we scored those by TOOL-CALL correctness (did it call the
+right tool with the right serial), which is date-independent, and pinned an
+as-of date for the wording. And: the eval itself must fit the token budget. The
+LLM-judged pass is heavy, and it repeatedly hit Groq's 100K-tokens-per-day
+ceiling across several accounts. Chasing fresh accounts to dodge the limit is a
+trap (a new key on the same org does not reset it; a new account is unreliable);
+the durable answer is to lead with the free deterministic metric and let the
+paid/LLM metric trickle in across days. The backbone of a good eval is the part
+that does not depend on a rate limit.
+
 ## Part 4 - Cross-cutting principles (the transferable lessons)
 
 1. Ground truth is the running code, not the README.

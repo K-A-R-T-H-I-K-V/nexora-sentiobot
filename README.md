@@ -87,14 +87,14 @@ Our ingestion pipeline processes documents for optimal retrieval, forming the ag
 
 ### Layer 2: The Proactive Agent Framework (The "Concierge")
 
-The Streamlit app runs a stateful, reasoning agent that uses a suite of tools to solve problems.
+The backend runs a stateful, reasoning LangGraph agent that uses a suite of tools to solve problems.
 
 1.  **The "Agent's Mind" (Prompt Engineering):** A meticulously crafted prompt acts as the agent's constitution, defining its persona, rules of engagement, and proactive nature.
 2.  **Tool Kit:** The RAG pipeline is demoted to be just one tool (`lookup_documentation`). Other tools allow the agent to act:
       - `check_order_status(order_id)`
       - `check_warranty_status(serial_number)`
       - `create_support_ticket(summary)`
-3.  **Conversational Memory:** The agent uses `ConversationBufferWindowMemory` to maintain context across multiple turns, enabling coherent, multi-step problem-solving.
+3.  **Conversational Memory:** The agent is given the last several turns of the conversation (loaded from the database) to maintain context across multiple turns, enabling coherent, multi-step problem-solving.
 4.  **Personalized Context:** On login, the user's profile (including specific products they own and their serial numbers) is injected into the agent's context, allowing for hyper-personalized, proactive assistance.
 
 -----
@@ -113,8 +113,8 @@ The Streamlit app runs a stateful, reasoning agent that uses a suite of tools to
   - **Tool-Using Agent (LangChain Agents):** The agent can reason, plan, and use a suite of tools to execute tasks like checking a warranty or creating a support ticket.
   - **Conversational Memory:** The agent remembers previous turns in the conversation, eliminating frustrating loops and allowing it to handle complex, multi-step user requests.
   - **User Personalization & Proactivity:** A login system provides the agent with the user's profile. The agent is explicitly instructed to use this data (e.g., product serial numbers) proactively to save the user time.
-  - **Feedback Loop & Analytics:** Interactive 👍/👎 buttons on each response log user feedback to `analytics.log`. A separate `dashboard.py` visualizes this data, providing insights into user pain points and knowledge gaps.
-  - **Robust Error Handling:** The `AgentExecutor` is configured with a self-correction mechanism, allowing it to recover from intermittent LLM formatting errors, making the system significantly more reliable.
+  - **Feedback Loop & Analytics:** Interactive 👍/👎 buttons on each response log user feedback to the `analytics` table (Supabase), surfaced via the `/analytics/summary` endpoint, providing insights into user pain points and knowledge gaps.
+  - **Robust Error Handling:** LLM and retrieval calls have defined failure behavior: they degrade to a single clean error message to the client instead of a stack trace, and provider error internals are never forwarded to the user.
 
 -----
 
@@ -133,23 +133,18 @@ The Streamlit app runs a stateful, reasoning agent that uses a suite of tools to
 
 ```
 nexora-sentiobot/
-|
-├── data/                  # Source documents (.md, .csv)
-├── scripts/
-│   ├── ingest.py          # Main script to build the document stores and vector DB
-│   └── ...
-├── parent_docstore/       # Persistent storage for full-text parent documents
-├── vector_db/             # Persistent ChromaDB vector store
-|
-├── .env                   # For API keys and environment variables
-├── app.py                 # The main Streamlit application (the agent)
-├── dashboard.py           # The Streamlit analytics dashboard
-├── tools.py               # Defines the tools the agent can use
-├── mock_db.py             # A mock database for users, products, and orders
-|
-├── analytics.log          # Log file for user interactions and feedback
-├── support_tickets.log    # Log file for created support tickets
-└── requirements.txt       # Python dependencies
+├── backend/                     # FastAPI + LangGraph service
+│   ├── api/main.py              # App entry, /chat/stream (SSE), /feedback, /analytics
+│   ├── agent/                  # LangGraph agent, tools, provider-selectable LLM
+│   ├── core/                   # config (pydantic settings), JWT auth
+│   ├── services/               # Supabase client, three-tier cache
+│   ├── scripts/ingest.py       # Builds the parent store + Chroma vector DB
+│   ├── data/                   # Source manuals/policies (.md, .csv)
+│   └── requirements.txt        # Pinned Python dependencies
+├── frontend/                    # Next.js 14 + React + TypeScript + Tailwind chat UI
+├── supabase/schema.sql          # App tables + seed users/products/orders
+├── docker-compose.yml           # backend + frontend + redis
+└── vector_db/ parent_docstore/  # Generated retrieval stores (gitignored)
 ```
 
 -----

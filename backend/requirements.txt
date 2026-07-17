@@ -14,15 +14,21 @@ python-multipart==0.0.9
 
 # LangChain / LangGraph
 langchain==0.3.3
-langchain-core==0.3.10
+langchain-core==0.3.63
 langchain-community==0.3.2
 langchain-google-genai==2.0.1
+langchain-groq==0.2.5
 langchain-huggingface==0.1.0
 langchain-chroma==0.1.4
 langgraph==0.2.38
 google-genai
 
 # Vector / Retrieval
+# CPU-only torch keeps the backend image small: the default Linux torch pulls
+# ~2GB of CUDA/cudnn/nccl wheels (the image was ~13GB). The +cpu build resolves
+# from the PyTorch CPU index below on both Linux and Windows.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.10.0+cpu
 chromadb==0.5.15
 sentence-transformers==3.1.1
 rank-bm25==0.2.2

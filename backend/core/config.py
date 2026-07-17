@@ -40,10 +40,19 @@ class Settings(BaseSettings):
     jwt_expire_minutes: int = 60 * 24 * 7  # 1 week
 
     # --- LLM ---
+    # Provider is config-selectable so a future swap is config, not a migration.
+    llm_provider: str = "groq"  # "groq" (ratified default) or "gemini"
+    llm_temperature: float = 0.0  # deterministic for eval reproducibility
+    llm_max_tokens: int = 2048
+    # Groq (ratified provider)
+    groq_api_key: str = ""
+    groq_model: str = "llama-3.3-70b-versatile"
+    # Gemini (kept selectable via LLM_PROVIDER=gemini)
     google_api_key: str = ""
     gemini_model: str = "gemini-2.0-flash"
-    llm_temperature: float = 0.1
-    llm_max_tokens: int = 2048
+    # Hard cap on agent tool-loop steps (LangGraph recursion limit); a runaway
+    # loop must not burn the Groq free-tier daily quota.
+    agent_max_iterations: int = 8
 
     # --- Supabase ---
     supabase_url: str = ""

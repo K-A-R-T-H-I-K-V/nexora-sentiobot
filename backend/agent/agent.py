@@ -35,6 +35,7 @@ from typing import AsyncIterator, TypedDict, Annotated
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, ToolMessage, SystemMessage
 from langchain_core.documents import Document
 from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_groq import ChatGroq
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
 from langchain.storage import LocalFileStore
@@ -54,6 +55,11 @@ from backend.agent.tools import check_order_status, check_warranty_status, creat
 
 logger = logging.getLogger(__name__)
 
+# Generic, user-safe error text. The real exception (which may contain provider
+# quota bodies, internal URLs, or stack detail) is logged server-side only and
+# never serialized to the client (F-1).
+_GENERIC_ERROR = "The assistant is temporarily unavailable. Please try again in a moment."
+
 # ---------------------------------------------------------------------------
 # Singletons (initialised once at startup)
 # ---------------------------------------------------------------------------
@@ -63,17 +69,37 @@ _llm = None
 _graph = None
 
 
-def get_llm() -> ChatGoogleGenerativeAI:
+def get_llm():
+    """Return the chat LLM for the configured provider (Groq by default).
+
+    The provider is config-selectable (LLM_PROVIDER) so a future swap is a
+    config change, not another migration. Embeddings and Chroma retrieval are
+    unaffected by this choice.
+    """
     global _llm
     if _llm is None:
         s = get_settings()
-        _llm = ChatGoogleGenerativeAI(
-            model=s.gemini_model,
-            google_api_key=s.google_api_key,
-            temperature=s.llm_temperature,
-            max_output_tokens=s.llm_max_tokens,
-            streaming=True,  # Critical for token streaming
-        )
+        provider = (s.llm_provider or "groq").lower()
+        if provider == "groq":
+            _llm = ChatGroq(
+                model=s.groq_model,
+                api_key=s.groq_api_key,
+                temperature=s.llm_temperature,
+                max_tokens=s.llm_max_tokens,
+                streaming=True,  # Critical for token streaming
+            )
+        elif provider == "gemini":
+            _llm = ChatGoogleGenerativeAI(
+                model=s.gemini_model,
+                google_api_key=s.google_api_key,
+                temperature=s.llm_temperature,
+                max_output_tokens=s.llm_max_tokens,
+                streaming=True,
+            )
+        else:
+            raise ValueError(
+                f"Unknown LLM_PROVIDER {provider!r}; use 'groq' or 'gemini'."
+            )
     return _llm
 
 
@@ -331,9 +357,9 @@ async def stream_agent_response(
             yield f"data: {json.dumps({'type': 'done', 'data': {'answer': full_answer, 'sources': sources}})}\n\n"
             return
 
-        except Exception as e:
+        except Exception:
             logger.exception("RAG stream error")
-            yield f"data: {json.dumps({'type': 'error', 'data': {'message': str(e)}})}\n\n"
+            yield f"data: {json.dumps({'type': 'error', 'data': {'message': _GENERIC_ERROR}})}\n\n"
             return
 
     # For tool-using queries, run the LangGraph agent
@@ -349,15 +375,20 @@ async def stream_agent_response(
     tool_sources: list[dict] = []
 
     try:
-        async for event in graph.astream_events(initial_state, version="v2"):
+        async for event in graph.astream_events(
+            initial_state,
+            version="v2",
+            config={"recursion_limit": get_settings().agent_max_iterations},
+        ):
             kind = event.get("event")
 
             if kind == "on_chat_model_stream":
-                # Stream only the top-level agent node's tokens. Nested LLM
-                # calls (the retriever's multi-query expansion inside the
-                # lookup_documentation tool) also surface here under the
-                # "tools" node and must not leak into the visible answer.
-                if event.get("metadata", {}).get("langgraph_node") == "tools":
+                # Allowlist: stream ONLY the top-level agent node's tokens.
+                # Nested LLM calls (the retriever's multi-query expansion inside
+                # the lookup_documentation tool, tagged node "tools", and any
+                # untagged nested stream) are suppressed so they cannot leak
+                # into the visible answer (F-2).
+                if event.get("metadata", {}).get("langgraph_node") != "agent":
                     continue
                 token = event["data"]["chunk"].content
                 if token:
@@ -381,6 +412,6 @@ async def stream_agent_response(
 
         yield f"data: {json.dumps({'type': 'done', 'data': {'answer': full_answer, 'sources': tool_sources}})}\n\n"
 
-    except Exception as e:
+    except Exception:
         logger.exception("Agent stream error")
-        yield f"data: {json.dumps({'type': 'error', 'data': {'message': str(e)}})}\n\n"
+        yield f"data: {json.dumps({'type': 'error', 'data': {'message': _GENERIC_ERROR}})}\n\n"

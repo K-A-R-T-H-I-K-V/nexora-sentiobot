@@ -6,9 +6,10 @@
 # build (see requirements.txt) which keeps the image ~3.2GB instead of ~13GB.
 #
 # The RAG index (vector_db / parent_docstore / parents.pkl) is BAKED in by the
-# COPY below (kept in .dockerignore), so the container is self-contained and
-# needs no persistent volume. A corpus change means re-running ingest and
-# rebuilding the image.
+# COPY below: unlike .env / venv / caches, it is NOT listed in .dockerignore, so
+# it is included in the build context and copied into the image. That makes the
+# container self-contained (no persistent volume). A corpus change means
+# re-running ingest and rebuilding the image.
 
 # ---- Stage 1: builder ----
 FROM python:3.11-slim AS builder

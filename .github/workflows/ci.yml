@@ -68,3 +68,38 @@ jobs:
         run: |
           npm ci
           npm run build
+
+  docker-build:
+    name: docker build + /health (clean runner)
+    runs-on: ubuntu-latest
+    # I8-1: prove the backend image builds from scratch on a CLEAN runner and the
+    # built container boots and serves /health, with NO secrets (dummy env only).
+    # Build only, never pushed. This gates the container before any deploy.
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build backend image (multi-stage, bakes the index)
+        run: docker build -t sentiobot-backend:ci ./backend
+
+      - name: Run the built image and curl /health
+        run: |
+          docker run -d --name sb -p 8000:8000 \
+            -e DEBUG=true \
+            -e JWT_SECRET=ci-health-check-secret-0123456789abcdef \
+            sentiobot-backend:ci
+          ok=""
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8000/health; then echo; echo "health OK on attempt $i"; ok=1; break; fi
+            sleep 2
+          done
+          if [ -z "$ok" ]; then echo "=== container logs ==="; docker logs sb; fi
+          docker rm -f sb >/dev/null
+          test -n "$ok"
+
+      - name: Assert no .env baked into the image
+        run: |
+          if docker run --rm --entrypoint sh sentiobot-backend:ci -c "test -f /app/backend/.env"; then
+            echo "SECURITY: .env is baked into the image"; exit 1
+          else
+            echo "OK: no .env in image"
+          fi

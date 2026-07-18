@@ -14,6 +14,7 @@ Writes: results/quality_retrieval_run_<label>.json
 from __future__ import annotations
 
 import json
+import os
 import pickle
 import subprocess
 import sys
@@ -24,6 +25,9 @@ from backend.core.config import get_settings  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[2]
 K = 5
+# I8-2: output dir is overridable so tests can write to a tmp path instead of
+# dirtying the committed results/ (defaults to the repo's results/).
+RESULTS_DIR = Path(os.environ.get("SENTIOBOT_RESULTS_DIR", str(REPO / "results")))
 
 
 def build_base_ensemble():
@@ -109,7 +113,8 @@ def main() -> int:
         "commit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=REPO).decode().strip(),
         "rows": rows,
     }
-    out = REPO / f"results/quality_retrieval_run_{label}.json"
+    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    out = RESULTS_DIR / f"quality_retrieval_run_{label}.json"
     out.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
     print(f"Run {label} -> {out}")
     print(f"  n={n}  hit@1={result['hit_rate_at_1']}  hit@3={result['hit_rate_at_3']}  "

@@ -753,3 +753,27 @@ Lessons to keep:
 4. Prove a negative. The fix is not "I added a check"; it is a TEST asserting user
    A is DENIED user B's order, messages, and analytics. An authorization fix
    without a cross-user denial test is an unverified claim.
+
+What Increment 7 shipped (builder). The sweep found one endpoint the audit had
+not listed: POST /chat/stream also takes a conversation_id and used it with no
+ownership check, so a user could read another user's history into context AND
+append messages to their conversation, not just read via the GET route. That is
+the point of item 1: enumerate everything, because the reflex that missed the GET
+route missed the POST one too. The enforcement is now one helper,
+require_conversation_owner, applied at BOTH conversation routes; analytics is
+scoped to the caller's own rows (a cross-user admin dashboard is a separate,
+admin-gated feature, deliberately deferred, not silently implied); feedback
+verifies the interaction's owner; tickets were already user-scoped via the
+request-context id from Increment 1.6. The gatekeeper model is written down in
+docs/AUTHORIZATION.md so the "service role bypasses RLS, therefore the app
+enforces" decision is explicit, not tribal knowledge.
+
+The one honest seam: the orders fix is app-layer-complete and proven by the
+denial suite at the code level (a mocked Bob-owned order is refused to Alice), but
+its LIVE effect needs a one-time schema migration (orders had no owner column),
+and the backend's service-role client speaks PostgREST, which cannot run DDL. So
+the migration (supabase/migrations/increment7_orders_owner.sql) is a human step in
+the Supabase SQL editor. The lesson in that friction: infrastructure changes
+(DDL) and code changes travel on different rails, and "the code is right" is not
+"the system is fixed" until the migration actually runs and the live denial test
+goes green. State which one you have verified.

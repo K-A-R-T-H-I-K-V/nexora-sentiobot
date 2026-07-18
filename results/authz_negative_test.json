@@ -1,0 +1,63 @@
+{
+  "test": "Increment 7 cross-user denial suite (BOLA/IDOR)",
+  "commit": "0c9923d3adb2c9073c77f70e2ac4cee75c290536",
+  "n": 10,
+  "passed": 9,
+  "hard_failures": [],
+  "pending_migration_skips": [
+    "LIVE orders scoping (migration applied)"
+  ],
+  "orders_live_scoped": false,
+  "results": [
+    {
+      "test": "Alice DENIED Bob's conversation messages",
+      "passed": true,
+      "detail": "HTTP 403"
+    },
+    {
+      "test": "Alice CAN read her own conversation messages",
+      "passed": true,
+      "detail": "HTTP 200"
+    },
+    {
+      "test": "Alice DENIED posting into Bob's conversation (chat/stream)",
+      "passed": true,
+      "detail": "HTTP 403"
+    },
+    {
+      "test": "analytics/summary returns 200 for Alice",
+      "passed": true,
+      "detail": "HTTP 200"
+    },
+    {
+      "test": "analytics/summary does NOT contain Bob's query (no cross-user leak)",
+      "passed": true,
+      "detail": "clean"
+    },
+    {
+      "test": "Alice DENIED feedback on Bob's interaction",
+      "passed": true,
+      "detail": "HTTP 403"
+    },
+    {
+      "test": "Alice CAN submit feedback on her own interaction",
+      "passed": true,
+      "detail": "HTTP 200"
+    },
+    {
+      "test": "Alice DENIED Bob's order (code owner-check)",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "test": "Alice CAN see her own order (code owner-check)",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "test": "LIVE orders scoping (migration applied)",
+      "passed": false,
+      "detail": "SKIPPED - orders.user_id not present; run supabase/migrations/increment7_orders_owner.sql"
+    }
+  ]
+}

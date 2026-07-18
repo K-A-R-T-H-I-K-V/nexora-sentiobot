@@ -1,6 +1,6 @@
 {
   "test": "Increment 7 cross-user denial suite (BOLA/IDOR)",
-  "commit": "9005e7b424c1613724bc7869c82c3441045027ce",
+  "commit": "be2a522ba3c0e6ed398f3dd56d2a625adc6527c1",
   "n": 10,
   "passed": 10,
   "hard_failures": [],
@@ -10,7 +10,7 @@
     {
       "test": "Alice DENIED Bob's conversation messages",
       "passed": true,
-      "detail": "HTTP 403"
+      "detail": "HTTP 404"
     },
     {
       "test": "Alice CAN read her own conversation messages",
@@ -20,7 +20,7 @@
     {
       "test": "Alice DENIED posting into Bob's conversation (chat/stream)",
       "passed": true,
-      "detail": "HTTP 403"
+      "detail": "HTTP 404"
     },
     {
       "test": "analytics/summary returns 200 for Alice",
@@ -35,7 +35,7 @@
     {
       "test": "Alice DENIED feedback on Bob's interaction",
       "passed": true,
-      "detail": "HTTP 403"
+      "detail": "HTTP 404"
     },
     {
       "test": "Alice CAN submit feedback on her own interaction",

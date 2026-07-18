@@ -6,7 +6,7 @@ For every user-scoped resource, assert that user A (Alice) is DENIED user B's
 a cross-user denial test is unverified.
 
 Almost token-free: the /chat/stream ownership check fires BEFORE the LLM, so a
-cross-user conversation_id is a 403 at zero cost. Orders are tested at the code
+cross-user conversation_id is denied (404, no oracle) at zero cost. Orders are tested at the code
 level (the live orders table has no owner column until the migration runs).
 
 Usage:  python -m backend.scripts.authz_negative_test
@@ -70,12 +70,12 @@ def main() -> int:
 
     print("MESSAGES / CONVERSATIONS (A7-MESSAGES):")
     r = httpx.get(f"{BASE}/chat/conversations/{b_conv}/messages", headers=H(a_tok), timeout=30)
-    check("Alice DENIED Bob's conversation messages", r.status_code == 403, f"HTTP {r.status_code}")
+    check("Alice DENIED Bob's conversation messages", r.status_code in (403, 404), f"HTTP {r.status_code}")
     r = httpx.get(f"{BASE}/chat/conversations/{a_conv}/messages", headers=H(a_tok), timeout=30)
     check("Alice CAN read her own conversation messages", r.status_code == 200, f"HTTP {r.status_code}")
-    # chat_stream with Bob's conversation_id -> 403 before any LLM work (0 tokens)
+    # chat_stream with Bob's conversation_id -> denied (403/404) before any LLM work (0 tokens)
     r = httpx.post(f"{BASE}/chat/stream", headers=H(a_tok), json={"message": "hi", "conversation_id": b_conv}, timeout=30)
-    check("Alice DENIED posting into Bob's conversation (chat/stream)", r.status_code == 403, f"HTTP {r.status_code}")
+    check("Alice DENIED posting into Bob's conversation (chat/stream)", r.status_code in (403, 404), f"HTTP {r.status_code}")
 
     print("ANALYTICS (A7-ANALYTICS, P1):")
     r = httpx.get(f"{BASE}/analytics/summary", headers=H(a_tok), timeout=30)
@@ -86,7 +86,7 @@ def main() -> int:
 
     print("FEEDBACK (A7-FEEDBACK):")
     r = httpx.post(f"{BASE}/feedback", headers=H(a_tok), json={"interaction_id": b_iid, "feedback": 1}, timeout=30)
-    check("Alice DENIED feedback on Bob's interaction", r.status_code == 403, f"HTTP {r.status_code}")
+    check("Alice DENIED feedback on Bob's interaction", r.status_code in (403, 404), f"HTTP {r.status_code}")
     r = httpx.post(f"{BASE}/feedback", headers=H(a_tok), json={"interaction_id": a_iid, "feedback": 1}, timeout=30)
     check("Alice CAN submit feedback on her own interaction", r.status_code == 200, f"HTTP {r.status_code}")
 

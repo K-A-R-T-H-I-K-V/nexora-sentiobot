@@ -1,0 +1,26 @@
+{
+  "test": "Increment 10 fail-closed proof (RLS denies with no app-level check)",
+  "commit": "be2a522ba3c0e6ed398f3dd56d2a625adc6527c1",
+  "rls_enabled": true,
+  "n": 4,
+  "passed": 4,
+  "hard_failures": [],
+  "results": [
+    {
+      "test": "Alice (no app-check) gets 0 of Bob's messages - DB denied",
+      "passed": true
+    },
+    {
+      "test": "Alice (no app-check) cannot read Bob's conversation row - DB denied",
+      "passed": true
+    },
+    {
+      "test": "Bob sees his own message (RLS allows the owner)",
+      "passed": true
+    },
+    {
+      "test": "Bob can read his own conversation row",
+      "passed": true
+    }
+  ]
+}

@@ -87,6 +87,29 @@ class NewConversationRequest(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Authorization helpers (Increment 7: BOLA/IDOR)
+# ---------------------------------------------------------------------------
+# The backend connects with the Supabase SERVICE ROLE key, which BYPASSES the
+# RLS policies in schema.sql. Authorization is therefore enforced HERE, in
+# application code, on every user-scoped resource. Each object-taking route must
+# confirm the object belongs to the authenticated caller before touching it.
+
+def require_conversation_owner(conversation_id: str, user_id: str) -> dict:
+    """Return the conversation iff it belongs to user_id; else 404/403.
+
+    404 for a non-existent id, 403 for someone else's, so we neither act on nor
+    silently ignore a cross-user id.
+    """
+    conv = db.get_conversation(conversation_id)
+    if conv is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found.")
+    if conv.get("user_id") != user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail="You do not have access to this conversation.")
+    return conv
+
+
+# ---------------------------------------------------------------------------
 # Middleware: latency logging
 # ---------------------------------------------------------------------------
 
@@ -130,6 +153,12 @@ async def chat_stream(
                             detail=f"Message too long (limit {s.max_input_chars} characters). Please shorten it.")
     # Per-user rate limit on this expensive endpoint (drains the daily budget).
     await enforce_rate_limit(current_user["id"])
+
+    # BOLA (Increment 7): if the caller names an existing conversation, it must be
+    # THEIRS. Otherwise a user could read history from and append messages to
+    # another user's conversation by passing its id. Checked before any work.
+    if req.conversation_id:
+        require_conversation_owner(req.conversation_id, current_user["id"])
 
     metrics.start()  # per-request measurement (measurement only; see core/metrics.py)
     user_id = current_user["id"]
@@ -285,6 +314,9 @@ async def get_messages(
     conversation_id: str,
     current_user: Annotated[dict, Depends(auth.get_current_user)],
 ):
+    # BOLA (Increment 7): the conversation must belong to the caller before we
+    # return any of its messages.
+    require_conversation_owner(conversation_id, current_user["id"])
     messages = db.get_messages_for_conversation(conversation_id)
     return messages
 
@@ -298,6 +330,14 @@ async def submit_feedback(
     req: FeedbackRequest,
     current_user: Annotated[dict, Depends(auth.get_current_user)],
 ):
+    # BOLA (Increment 7): a user may only rate their OWN interaction. Verify the
+    # analytics row belongs to the caller before updating it.
+    row = db.get_analytics_by_id(req.interaction_id)
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Interaction not found.")
+    if row.get("user_id") != current_user["id"]:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail="You cannot submit feedback for another user's interaction.")
     db.update_analytics_feedback(req.interaction_id, req.feedback)
     return {"status": "ok"}
 
@@ -308,10 +348,18 @@ async def submit_feedback(
 
 @app.get("/analytics/summary")
 async def analytics_summary(current_user: Annotated[dict, Depends(auth.get_current_user)]):
-    """Returns aggregated stats for the dashboard."""
+    """Aggregated stats for the CALLER's own interactions.
+
+    BOLA fix (Increment 7, A7-ANALYTICS): this previously did select("*") over the
+    whole analytics table and returned EVERY user's queries and bot answers to any
+    authenticated user - a bulk cross-user data exposure. It is now scoped to the
+    caller's own rows. A cross-user / org-wide admin dashboard is a separate,
+    admin-gated feature (deferred: needs a users.is_admin flag + migration; see
+    docs/AUTHORIZATION.md), NOT something a normal user may receive.
+    """
     import pandas as pd
 
-    rows = db.get_db().table("analytics").select("*").execute().data
+    rows = db.get_analytics_for_user(current_user["id"])
     if not rows:
         return {"total": 0, "positive": 0, "negative": 0, "top_queries": []}
 

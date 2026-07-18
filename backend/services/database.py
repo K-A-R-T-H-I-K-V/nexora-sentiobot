@@ -71,6 +71,20 @@ def create_conversation(user_id: str, title: str = "New Conversation") -> dict:
     return result.data[0]
 
 
+def get_conversation(conversation_id: str) -> dict | None:
+    """Fetch a single conversation row (incl. user_id) for ownership checks.
+
+    The backend uses the Supabase SERVICE ROLE key, which bypasses RLS, so the
+    caller MUST verify conversation["user_id"] against the authenticated user
+    before returning or writing anything scoped to it (Increment 7, BOLA).
+    """
+    try:
+        result = get_db().table("conversations").select("*").eq("id", conversation_id).single().execute()
+        return result.data
+    except Exception:
+        return None
+
+
 def get_conversations_for_user(user_id: str) -> list[dict]:
     result = (
         get_db().table("conversations")
@@ -112,6 +126,22 @@ def log_analytics(entry: dict) -> None:
     get_db().table("analytics").insert(entry).execute()
 
 
+def get_analytics_by_id(interaction_id: str) -> dict | None:
+    """Fetch a single analytics row (incl. user_id) for ownership checks."""
+    try:
+        result = get_db().table("analytics").select("id,user_id").eq("id", interaction_id).single().execute()
+        return result.data
+    except Exception:
+        return None
+
+
+def get_analytics_for_user(user_id: str) -> list[dict]:
+    """All analytics rows for ONE user (Increment 7: summary is scoped to the
+    caller, never the whole table)."""
+    result = get_db().table("analytics").select("*").eq("user_id", user_id).execute()
+    return result.data
+
+
 def update_analytics_feedback(interaction_id: str, feedback: int) -> None:
     get_db().table("analytics").update({"feedback": feedback}).eq("id", interaction_id).execute()
 
@@ -140,8 +170,9 @@ from backend.core import metrics as _metrics  # noqa: E402
 
 for _name in (
     "get_user_by_username", "get_user_by_id", "get_product_by_serial",
-    "get_order_by_id", "create_conversation", "get_conversations_for_user",
-    "save_message", "get_messages_for_conversation", "log_analytics",
+    "get_order_by_id", "create_conversation", "get_conversation",
+    "get_conversations_for_user", "save_message", "get_messages_for_conversation",
+    "log_analytics", "get_analytics_by_id", "get_analytics_for_user",
     "update_analytics_feedback", "create_ticket",
 ):
     globals()[_name] = _metrics.count_supabase(globals()[_name])

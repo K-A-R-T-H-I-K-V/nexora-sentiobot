@@ -41,6 +41,7 @@ from backend.agent.agent import stream_agent_response
 from backend.core.config import get_settings
 from backend.core import metrics
 from backend.core.rate_limit import enforce_rate_limit
+from backend.core.request_context import current_access_token
 
 # ---------------------------------------------------------------------------
 # App setup
@@ -135,6 +136,7 @@ async def log_requests(request: Request, call_next):
 async def chat_stream(
     req: ChatRequest,
     current_user: Annotated[dict, Depends(auth.get_current_user)],
+    token: Annotated[str, Depends(auth.oauth2_scheme)],
 ):
     """
     Main streaming chat endpoint.  Returns Server-Sent Events.
@@ -239,6 +241,11 @@ async def chat_stream(
 
     async def generate():
         nonlocal final_answer_parts, sources
+        # Re-bind the access token inside the streaming generator so the post-answer
+        # DB writes (save_message, log_analytics) carry the user's JWT for RLS,
+        # even if the request-context ContextVar does not propagate into the
+        # StreamingResponse task (Increment 10).
+        current_access_token.set(token)
 
         async for sse_data in stream_agent_response(message, history, user_profile, user_id):
             out = sse_data

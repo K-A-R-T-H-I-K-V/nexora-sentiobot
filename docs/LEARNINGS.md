@@ -924,3 +924,52 @@ Two habits worth keeping:
   the app un-deployable for free. Constraints (no card, 512MB) are a design input,
   and sometimes the cleanest answer to "where can I host this?" is "make the thing
   small enough to host anywhere."
+
+## Part 16 - Fail-closed, proven: moving authorization into the database (Increment 10)
+
+Increment 7 enforced authorization in application code and verified it 10/10.
+Increment 10 makes it FAIL-CLOSED: the database itself now denies cross-user
+access for user-owned data, so a forgotten app-level check leaks nothing. Part 12
+argued why this is the better foundation; this is building it, and the details are
+where the traps live.
+
+The mechanism. Postgres Row-Level Security (RLS) filters every query by a policy,
+but only if the query runs as a non-privileged role carrying the user's identity.
+We were using the Supabase SERVICE-ROLE key, which bypasses RLS entirely. So the
+move is: for the user-owned tables, run each request through a per-request Supabase
+client authed with the CALLER'S JWT, so their queries hit RLS with their claims.
+Keep the service-role client only where there is no user JWT yet (login, at-auth
+user lookup) or the data is not user-scoped (reference data, the tool path). A
+hybrid, not a rip-and-replace.
+
+Trap 1: the token has to be signed with a secret the database trusts. Our app
+issued its own JWT signed with our own secret. Postgres/PostgREST validates the
+JWT against the SUPABASE JWT secret; a token it cannot verify is simply ignored,
+and RLS then sees no identity and denies everything (or, worse, if you get the
+role wrong, allows everything). Fix: sign the auth token with the Supabase JWT
+secret and include the claims Supabase expects (role=authenticated, aud, and sub =
+the user id). The signing-secret change is invisible in local tests until a real
+RLS query runs, which is exactly why it needs an end-to-end check.
+
+Trap 2: auth.jwt() vs auth.uid(). Supabase policies usually read auth.uid(), which
+returns the id from auth.users (Supabase's own auth table). Our users live in
+public.users; we do not use Supabase Auth. So auth.uid() would never match any
+row and RLS would deny ALL access - a silent, total lockout that looks like a
+bug, not a security feature. The correct policy reads the claim directly:
+user_id = (auth.jwt() ->> 'sub')::uuid. Match the policy to where your identities
+actually live.
+
+Trap 3: fail-closed is a CLAIM until you delete the app check and watch the DB
+hold. It is tempting to enable RLS, keep the app checks, see the denial suite stay
+green, and call it fail-closed. But green could be the app checks doing the work
+while RLS quietly does nothing (wrong role, wrong policy, missing grant). The only
+honest proof is adversarial: REMOVE the app-level check from the path and confirm
+the database STILL returns none of another user's rows. fail_closed_proof.py does
+exactly that - Alice's JWT, the raw query, no app check, zero of Bob's rows. If
+that returns Bob's data, your RLS is decorative. Prove the negative by removing
+the thing that might be masking it.
+
+The transferable lesson: defense in depth means two INDEPENDENT barriers, and you
+only know they are independent if you can knock one down and watch the other hold.
+We kept the app checks as the belt, but we proved the database is the load-bearing
+control by taking the belt off and pulling.

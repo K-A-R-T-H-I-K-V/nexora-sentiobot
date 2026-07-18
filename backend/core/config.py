@@ -66,6 +66,24 @@ class Settings(BaseSettings):
     supabase_url: str = ""
     supabase_anon_key: str = ""
     supabase_service_role_key: str = ""
+    # Increment 10 (RLS-with-JWT): the project's JWT secret (Supabase dashboard ->
+    # Settings -> API -> JWT Secret). When this AND supabase_anon_key are set, the
+    # app signs auth tokens with it and routes user-owned data through a
+    # per-request user-JWT client so Postgres RLS enforces ownership (fail-closed).
+    # If unset, the app falls back to the Increment 1-9 behaviour (own jwt_secret +
+    # service-role client + app-layer checks), so this is a safe, staged rollout.
+    supabase_jwt_secret: str = ""
+
+    @property
+    def rls_enabled(self) -> bool:
+        """True when both Supabase secrets needed for the user-JWT RLS path are set."""
+        return bool(self.supabase_jwt_secret and self.supabase_anon_key)
+
+    @property
+    def auth_signing_secret(self) -> str:
+        """Sign/verify auth tokens with the Supabase JWT secret when available (so
+        Postgres RLS accepts them), else the app's own jwt_secret (legacy)."""
+        return self.supabase_jwt_secret or self.jwt_secret
 
     # --- Retrieval ---
     # Increment 4: base ensemble (BM25 + vector) is the default. The multi-query

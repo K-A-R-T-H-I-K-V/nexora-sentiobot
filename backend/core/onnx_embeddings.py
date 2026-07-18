@@ -5,7 +5,7 @@ Increment 9: we previously ran MiniLM through PyTorch (langchain-huggingface +
 sentence-transformers + torch), which alone made the backend image ~2.8GB and
 its resident memory ~1GB - too heavy for free scale-to-zero hosts. This runs the
 SAME model on ONNX Runtime via fastembed: no torch, ~1/10th the footprint, image
-~500MB. Verified bit-identical retrieval (query cosine 1.0 vs the PyTorch model,
+~1.5GB and its RAM to ~280MB. Verified bit-identical retrieval (query cosine 1.0 vs the PyTorch model,
 hit@5 0.913 with the same misses against the existing index), so the frozen
 baseline holds and the index does not need rebuilding.
 

@@ -25,7 +25,7 @@ google-genai
 # Vector / Retrieval
 # Embeddings run the all-MiniLM-L6-v2 model on ONNX Runtime (fastembed), NOT
 # PyTorch. Same model, verified bit-identical retrieval (query cosine 1.0, hit@5
-# 0.913), but ~1/10th the memory and the image drops from ~2.8GB to ~500MB so it
+# 0.913), but ~1/3rd the memory (~280MB RAM) and the image drops ~2.8GB to ~1.5GB so it
 # fits free scale-to-zero hosts. torch + sentence-transformers are gone on
 # purpose (Increment 9).
 fastembed==0.8.0

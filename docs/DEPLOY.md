@@ -12,7 +12,7 @@ Why not the "obvious" hosts:
 What made Render viable: the backend used to be ~2.8GB and ~1GB RAM because of
 PyTorch. We now run the same MiniLM embedding model on **ONNX Runtime** (fastembed)
 instead - verified bit-identical retrieval (hit@5 0.913) at ~1/10th the memory, so
-the image is ~500MB and fits Render's free 512MB tier.
+its RAM is ~280MB (image ~1.5GB) and fits Render's free 512MB tier.
 
 ## The shape of it
 

@@ -1,222 +1,99 @@
-# SentioBot: An Advanced RAG Chatbot for Custom Documentation
+# SentioBot
 
-<div align="center">
-  <img src="[https://api.dicebear.com/7.x/bottts/svg?seed=sentiobot&backgroundColor=00ffff&radius=10](https://api.dicebear.com/7.x/bottts/svg?seed=sentiobot&backgroundColor=00ffff&radius=10)" width="150" alt="SentioBot Logo">
-</div>
+A production-grade AI customer-support assistant for a fictional electronics brand (Nexora). Ask it about a product, a policy, an order, or a warranty, and it answers from real documentation with cited sources, or calls a tool to check live order and warranty data. Built as a measured, reviewed, increment-by-increment hardening workstream, not a weekend demo.
 
-<p align="center">
-  An AI-powered assistant for Nexora Electronics, built with a sophisticated, multi-stage RAG pipeline to provide accurate, context-aware answers from technical manuals and policy documents.
-</p>
+**Live demo: https://sentiobot.vercel.app**
 
-> **Status note (2026-07, under active rework):** This README describes the
-> original v1 (a single Streamlit app). The system is now a two-service app: a
-> FastAPI + LangGraph backend (Google Gemini 2.0 Flash, ChromaDB + BM25 hybrid
-> retrieval, Supabase for app data) and a Next.js 14 frontend. The **Tech
-> Stack**, **Setup**, **How to Run**, and **Project Structure** sections below
-> are STALE and being reworked. For the accurate architecture and the canonical
-> run command, see `STATUS-prod.md` and `SETUP.md`. Run the backend from the
-> repository root with `uvicorn backend.api.main:app`. A full, honest rewrite is
-> scheduled (P6).
+Sign in with `alice` / `password123` (seeded demo user). The backend runs on a free scale-to-zero tier, so the first request after an idle period takes about 30 to 60 seconds to wake up; after that it is fast.
+
+![CI](https://github.com/K-A-R-T-H-I-K-V/nexora-sentiobot/actions/workflows/ci.yml/badge.svg)
 
 ---
-## Table of Contents
 
-  * [Live Demo](https://www.google.com/search?q=%23live-demo)
-  * [The Problem](https://www.google.com/search?q=%23the-problem)
-      * [Part 1: The Limits of Naive RAG](https://www.google.com/search?q=%23part-1-the-limits-of-naive-rag)
-      * [Part 2: The Passive Assistant](https://www.google.com/search?q=%23part-2-the-passive-assistant)
-  * [Our Solution: A Multi-Layered Architecture](https://www.google.com/search?q=%23our-solution-a-multi-layered-architecture)
-      * [Layer 1: The Advanced RAG Foundation](https://www.google.com/search?q=%23layer-1-the-advanced-rag-foundation)
-      * [Layer 2: The Proactive Agent Framework](https://www.google.com/search?q=%23layer-2-the-proactive-agent-framework)
-  * [Key Features & Techniques](https://www.google.com/search?q=%23key-features--techniques)
-      * [Retrieval (RAG) Features](https://www.google.com/search?q=%23retrieval-rag-features)
-      * [Agent & UX Features](https://www.google.com/search?q=%23agent--ux-features)
-  * [Tech Stack](https://www.google.com/search?q=%23tech-stack)
-  * [Project Structure](https://www.google.com/search?q=%23project-structure)
-  * [Setup and Installation](https://www.google.com/search?q=%23setup-and-installation)
-  * [How to Run](https://www.google.com/search?q=%23how-to-run)
-      * [Stage 1: Ingestion Pipeline](https://www.google.com/search?q=%23stage-1-ingestion-pipeline)
-      * [Stage 2: Run the System](https://www.google.com/search?q=%23stage-2-run-the-system)
-  * [Future Improvements & Roadmap](https://www.google.com/search?q=%23future-improvements--roadmap)
-  
----
-## Live Demo
+## What it does
 
-This is the final, working application, capable of handling specific technical queries and general troubleshooting questions with high accuracy.
+- **Grounded answers.** A documentation question ("How do I install the LumiGlow bulb?") retrieves the relevant manual sections and streams a cited answer. The model is instructed to answer only from retrieved context, so it does not invent policy.
+- **Actions, not just answers.** An order, warranty, or ticket request routes to a small tool-using agent that checks live data (Supabase) and can open a support ticket, scoped to the authenticated user.
+- **Personalized and stateful.** It knows the signed-in user's products, keeps conversation history, and warms a cache so repeat questions are instant.
 
-![SentioBot in action, successfully answering user questions](https://i.imgur.com/G5g2mNm.png)
+## Architecture
 
----
- ---
-
-## The Problem
-
-### Part 1: The Limits of Naive RAG
-
-Simple RAG pipelines fail with complex, real-world documentation. The common failure points we solved were:
-
-1.  **Fragmented Context:** Arbitrary splitting breaks apart tables and logical sections, leading to incomplete answers.
-2.  **Poor Relevance:** Simple vector search often fails on specific technical queries, prioritizing general prose over dense, factual data.
-3.  **Stateless Inefficiency:** In-memory stores cause slow "cold starts" and inconsistent behavior between runs.
-
-### Part 2: The Passive Assistant
-
-Even a perfect RAG system is just a librarian—it can find the right book, but it can't act on the information for you. This creates a frustrating user experience:
-
-  - **User:** "Is my product under warranty?"
-  - **Passive Bot:** "Our warranty policy is for two years." (Unhelpful)
-  - **User:** "Okay, can you start a return for me?"
-  - **Passive Bot:** "Our return policy states you must contact support." (Frustrating)
-
-The bot could inform, but it couldn't **do**. It lacked agency, memory, and personalization.
-
------
-
-## Our Solution: A Multi-Layered Architecture
-
-We built a robust, two-layer system. A powerful RAG pipeline serves as the foundational knowledge layer, while a LangChain Agent acts as the intelligent reasoning and action layer on top.
-
-### Layer 1: The Advanced RAG Foundation (The "Library")
-
-Our ingestion pipeline processes documents for optimal retrieval, forming the agent's long-term memory.
-
-1.  **Semantic Chunking:** Documents are split into "parent" documents by Markdown headings.
-2.  **Persistent Parent Storage:** Full-text parent documents are saved to a `LocalFileStore`.
-3.  **Vector Store Creation:** We use `HuggingFaceEmbeddings` and store them in a persistent `ChromaDB` vector store.
-4.  **Hybrid Search Index:** A `BM25Retriever` index is built for keyword-based search.
-
-### Layer 2: The Proactive Agent Framework (The "Concierge")
-
-The backend runs a stateful, reasoning LangGraph agent that uses a suite of tools to solve problems.
-
-1.  **The "Agent's Mind" (Prompt Engineering):** A meticulously crafted prompt acts as the agent's constitution, defining its persona, rules of engagement, and proactive nature.
-2.  **Tool Kit:** The RAG pipeline is demoted to be just one tool (`lookup_documentation`). Other tools allow the agent to act:
-      - `check_order_status(order_id)`
-      - `check_warranty_status(serial_number)`
-      - `create_support_ticket(summary)`
-3.  **Conversational Memory:** The agent is given the last several turns of the conversation (loaded from the database) to maintain context across multiple turns, enabling coherent, multi-step problem-solving.
-4.  **Personalized Context:** On login, the user's profile (including specific products they own and their serial numbers) is injected into the agent's context, allowing for hyper-personalized, proactive assistance.
-
------
-
-## Key Features & Techniques
-
-### Retrieval (RAG) Features
-
-  - **Parent-Document Retrieval:** The "search small, retrieve big" pattern. We perform a hybrid search on child chunks to find and return the full-context parent document.
-  - **Hybrid Search:** Combining keyword (`BM25`) and semantic (`Vector`) search for robust retrieval across all query types.
-  - **Multi-Query Retriever:** Automatically generating multiple perspectives of a user's query to drastically improve the chances of finding the correct document.
-  - **Persistent Document Stores:** Using `LocalFileStore` and `ChromaDB` to decouple ingestion from runtime, leading to near-instant app startups.
-
-### Agent & UX Features
-
-  - **Tool-Using Agent (LangChain Agents):** The agent can reason, plan, and use a suite of tools to execute tasks like checking a warranty or creating a support ticket.
-  - **Conversational Memory:** The agent remembers previous turns in the conversation, eliminating frustrating loops and allowing it to handle complex, multi-step user requests.
-  - **User Personalization & Proactivity:** A login system provides the agent with the user's profile. The agent is explicitly instructed to use this data (e.g., product serial numbers) proactively to save the user time.
-  - **Feedback Loop & Analytics:** Interactive 👍/👎 buttons on each response log user feedback to the `analytics` table (Supabase), surfaced via the `/analytics/summary` endpoint, providing insights into user pain points and knowledge gaps.
-  - **Robust Error Handling:** LLM and retrieval calls have defined failure behavior: they degrade to a single clean error message to the client instead of a stack trace, and provider error internals are never forwarded to the user.
-
------
-
-## Tech Stack
-
-  - **Backend:** FastAPI (async, SSE token streaming)
-  - **Agent / Orchestration:** LangGraph (StateGraph) + LangChain retrievers
-  - **LLM:** Google Gemini 2.0 Flash
-  - **Vector Database:** ChromaDB (hybrid with `BM25Retriever`)
-  - **Embedding Model:** HuggingFace `all-MiniLM-L6-v2`
-  - **App Database:** Supabase (Postgres)
-  - **Frontend:** Next.js 14 + React 18 + TypeScript + Tailwind
-  - **Analytics:** Pandas
-
-## Project Structure
-
-```
-nexora-sentiobot/
-├── backend/                     # FastAPI + LangGraph service
-│   ├── api/main.py              # App entry, /chat/stream (SSE), /feedback, /analytics
-│   ├── agent/                  # LangGraph agent, tools, provider-selectable LLM
-│   ├── core/                   # config (pydantic settings), JWT auth
-│   ├── services/               # Supabase client, three-tier cache
-│   ├── scripts/ingest.py       # Builds the parent store + Chroma vector DB
-│   ├── data/                   # Source manuals/policies (.md, .csv)
-│   └── requirements.txt        # Pinned Python dependencies
-├── frontend/                    # Next.js 14 + React + TypeScript + Tailwind chat UI
-├── supabase/schema.sql          # App tables + seed users/products/orders
-├── docker-compose.yml           # backend + frontend + redis
-└── vector_db/ parent_docstore/  # Generated retrieval stores (gitignored)
+```mermaid
+flowchart LR
+    B[Browser] -->|HTTPS| FE[Next.js frontend<br/>Vercel]
+    FE -->|JWT| API[FastAPI + LangGraph<br/>Render, Docker]
+    API --> LLM[Groq<br/>Llama 3.3 70B]
+    API --> DB[(Supabase<br/>Postgres)]
+    API --> RET[ChromaDB + BM25<br/>ONNX MiniLM<br/>baked into image]
 ```
 
------
-## Setup and Installation (current v2, condensed)
+Two answer paths behind one streaming endpoint:
 
-> The steps below reflect the current two-service app. See `SETUP.md` for the
-> full walkthrough; a polished README rewrite lands in P6.
+- **RAG path** (documentation questions): a hybrid ensemble retriever (BM25 0.4 + vector 0.6, k=5) finds the relevant sections; the LLM streams a cited answer token by token.
+- **Tool path** (orders / warranty / tickets): a LangGraph state machine lets the model call tools, with a hard round cap plus a forced finalize node so it always converges, then streams the answer.
 
-1.  **Clone and enter the repo**
-    ```bash
-    git clone https://github.com/K-A-R-T-H-I-K-V/nexora-sentiobot.git
-    cd nexora-sentiobot
-    ```
+## Engineering highlights
 
-2.  **Backend deps** (Python 3.11; a pinned `requirements.txt` is committed, do
-    NOT regenerate it)
-    ```bash
-    python -m venv backend/venv
-    backend/venv/Scripts/activate      # Windows;  or: source backend/venv/bin/activate
-    pip install -r backend/requirements.txt
-    ```
+The interesting part is not the happy path; it is what it took to make it trustworthy and shippable. Every step was measured and independently reviewed before it counted.
 
-3.  **Backend env**: copy `backend/.env.example` to `backend/.env` and fill in
-    real values (Google API key, Supabase, and a `JWT_SECRET` from
-    `openssl rand -hex 32`).
+- **Measure before optimizing.** Instrumented per-request LLM calls, tokens, and latency, then cut the multi-query retriever behind a reversible flag: measured 2 LLM calls per answer down to 1, tokens down 53 percent, retrieval quality unchanged.
+- **A frozen evaluation you can trust.** A 50-question golden set, hash-locked so a silent edit fails the build. Deterministic retrieval **hit@5 = 0.913** (BM25 + vector), reproduced bit-for-bit and gated in CI with zero paid tokens.
+- **Prompt-injection defense, measured not assumed.** An input filter plus an output-side guard that redacts any response echoing the system prompt (zero-leak, verified across randomized stream chunkings). A red-team suite of 23 attacks (exfiltration, role-persona, goal-hijack, obfuscation, tool-abuse) with **no system-prompt leak**, and the residuals written down honestly.
+- **Full authorization audit (BOLA / IDOR).** The backend uses a service-role key that bypasses database RLS, so ownership is enforced in application code on every user-scoped endpoint. A cross-user denial suite proves user A cannot read user B's orders, messages, conversations, feedback, or analytics: **10/10, verified live on the deployed instance.**
+- **Resilience and cost guards.** Provider timeouts and backed-off retries, sanitized error messages (no stack traces or quota bodies leak to the client), a per-user rate limit, and input-size caps.
+- **Container and CI.** A multi-stage image with the RAG index baked in, and a GitHub Actions pipeline that gates the container build, the authorization denial suite, the injection guards, and the deterministic eval, all free and with no real keys.
+- **A real optimization to ship for free.** The backend was about 2.8GB and wanted roughly 1GB of RAM because of PyTorch, which does not fit free 512MB hosts. Running the same MiniLM embedding model on ONNX Runtime instead (proven equivalent: query cosine 1.0, hit@5 still 0.913) dropped it to a **1.5GB image and about 280MB RAM**, measured in-container under a 512MB cap. That is why it deploys on a free tier with no card.
 
-4.  **Build the retrieval stores** (direct mode needs no LLM API calls)
-    ```bash
-    python -m backend.scripts.ingest --direct
-    ```
+The full narrative, with the reasoning and the mistakes, is in [docs/LEARNINGS.md](docs/LEARNINGS.md).
 
-## How to Run (current v2)
+## Tech stack
 
-- **Backend** (from the repository root, so the `backend` package resolves):
-  ```bash
-  uvicorn backend.api.main:app --reload --port 8000
-  ```
-- **Frontend**
-  ```bash
-  cd frontend && npm install && npm run dev
-  ```
-- **Full stack in containers**
-  ```bash
-  docker compose up --build
-  ```
+| Layer | Choice |
+|---|---|
+| Frontend | Next.js 14, React, TypeScript, Tailwind (Vercel) |
+| Backend | FastAPI, LangGraph, Python 3.11 (Render, Docker) |
+| LLM | Groq, Llama 3.3 70B (provider behind a config flag) |
+| Retrieval | ChromaDB + BM25 hybrid, all-MiniLM-L6-v2 on ONNX Runtime |
+| Data | Supabase (Postgres) |
+| Cache | In-process L1 (exact) + L2 (semantic), optional Redis L3 |
+| CI | GitHub Actions (lint, tests, security + eval gates, container build) |
 
----
-## Future Improvements & Roadmap
+## Run it locally
 
-This project provides a powerful foundation. Here are some exciting directions to take it next:
+Prerequisites: Docker, and a `backend/.env` created from `backend/.env.example` with your own Supabase and Groq keys (both have free tiers).
 
-### 1. **Citation with Source Highlighting**
-* **What:** Instead of just listing the source document, the LLM could be prompted to extract the *exact sentence(s)* from the source that directly support its claim and highlight it in the UI to build user trust.
-* **Why:** This provides "ground truth" and drastically increases user trust. the UI could then highlight this quote within the "View Sources" expander.
+```bash
+cp backend/.env.example backend/.env   # then fill in real values
+docker compose up --build
+```
 
-### 2. **Multimodal RAG**
-* **What:** The current system only processes text. A multimodal system would also ingest images, diagrams, and tables from the documents. Using a multimodal model (like `gemini-pro-vision`), the chatbot could answer questions like, "Show me the wiring diagram for the Thermostat Pro" or "What does the icon for vacation mode look like?"
-* **Why:** Many technical manuals rely heavily on visual information. This would unlock a huge portion of currently unused data.
+That serves the backend on http://localhost:8000, the frontend on http://localhost:3000, and Redis. The RAG index is baked into the image, so there is nothing to ingest first.
 
+Run the free test suites (no keys needed):
 
-### 3. **Evaluation Pipeline**
-* **What:** Implement a RAG evaluation framework like **RAGAs** or **TruLens**. This involves creating a "golden dataset" of questions and ideal answers. The framework can then be used to automatically score the performance of the retrieval and generation steps.
-* **Why:** This allows for objective, data-driven improvements. Instead of guessing if a change (like retriever weights) helped, you can measure it scientifically with metrics like context relevance and answer faithfulness.
+```bash
+pip install -r backend/requirements.txt ruff pytest
+ruff check backend/
+pytest backend/tests/    # output guard, injection filter, cross-user authz, retrieval hit@5
+```
 
-### 4. **Knowledge Graph Integration**
-* **What:** The ultimate upgrade. Instead of storing data as unstructured text chunks, use an LLM to parse all documents into a structured knowledge graph of entities and relationships (e.g., `(LumiGlow Bulb) -[has lifespan of]-> (25,000 hours)`).
-* **Why:** This allows for much more complex, multi-hop queries that standard RAG struggles with, such as "Compare the warranty periods and lifespans of all smart light products."
+## Deploy your own ($0, no card)
 
-> Note: this Roadmap section predates the production workstream. The live,
-> ratified plan (baselines, hardening, container/CI, deploy) lives in
-> `STATUS-prod.md`.
+See [docs/DEPLOY.md](docs/DEPLOY.md) for the full runbook: backend on Render (free Docker web service), frontend on Vercel, the secrets checklist, the CORS handshake order, and the keep-warm cron for scale-to-zero.
 
+## Docs and deep dives
 
+- [docs/LEARNINGS.md](docs/LEARNINGS.md) - the narrative: architecture, concepts, and the lesson behind every decision.
+- [docs/AUTHORIZATION.md](docs/AUTHORIZATION.md) - the authorization model (why the app, not RLS, is the gatekeeper here).
+- [docs/DEPLOY.md](docs/DEPLOY.md) - the deploy runbook.
+- [STATUS-prod.md](STATUS-prod.md) - the terse engineering ledger: every increment, commit, and gate.
 
+## Honest limitations
 
+Stated plainly, because a limitations section is part of the work.
+
+- **Injection is contained, not solved.** The guards block verbatim and common prompt-extraction, but a transformed leak (translated, base64-encoded) can evade string matching. The load-bearing defense is blast-radius containment: even a jailbroken model has only user-scoped tools and cannot reach another user's data.
+- **Authorization is enforced in application code**, because the backend uses a service-role key that bypasses database RLS. This is verified (10/10 denial suite) but fail-open if a future endpoint forgets a check, which is why that suite runs in CI. A fail-closed RLS-with-JWT model is a planned defense-in-depth increment.
+- **The quality judge is weak.** RAGAS-style faithfulness uses a small model and is treated as indicative only; the trustworthy numbers are the deterministic ones (call counts, tokens, hit@5).
+- **The corpus is small and curated** (about 85 sections). Retrieval numbers may not generalize to a larger, messier corpus.
+- **Free-tier cold starts.** The backend scales to zero, so the first request after idle is slow. A cron keeps it warm during active hours.

@@ -911,7 +911,7 @@ fastembed) executes the exact same MiniLM weights without torch. We checked it t
 only way that counts: we measured. Query embeddings came out at cosine 1.0 versus
 the torch model, and retrieval hit@5 stayed 0.913 with the identical miss set
 against the EXISTING index - so no re-ingest, and the frozen baseline held. Image:
-~2.8GB -> ~500MB. Memory: ~1GB -> ~300MB. It now fits a free 512MB host, and cold
+~2.8GB -> ~1.5GB. Memory: ~1GB -> ~280MB (measured under a 512MB cap). It now fits a free 512MB host, and cold
 starts got faster too.
 
 Two habits worth keeping:

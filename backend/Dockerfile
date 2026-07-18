@@ -3,8 +3,9 @@
 # Stage 1 (builder) installs the Python deps (incl. build-essential for any
 # native wheels) into an isolated venv. Stage 2 (runtime) copies just that venv
 # and the app, so build-essential is NOT in the final image. Embeddings run on
-# ONNX Runtime (fastembed), NOT PyTorch, so the image is ~500MB (was ~2.8GB with
-# torch) and fits free scale-to-zero hosts.
+# ONNX Runtime (fastembed), NOT PyTorch, so the image is ~1.5GB (was ~2.8GB with
+# torch) and its RAM drops to ~280MB (measured under a 512MB cap), fitting free
+# scale-to-zero hosts.
 #
 # Two things are BAKED in so the container is self-contained (no volume, no
 # cold-start download): the RAG index (vector_db / parent_docstore / parents.pkl,

@@ -45,12 +45,10 @@ _embedder = None
 def _get_embedder():
     global _embedder
     if _embedder is None:
-        from langchain_huggingface import HuggingFaceEmbeddings
         from backend.core import metrics
-        _embedder = metrics.CountingEmbeddings(HuggingFaceEmbeddings(
-            model_name="all-MiniLM-L6-v2",
-            model_kwargs={"device": "cpu"},
-        ))
+        from backend.core.onnx_embeddings import get_embeddings
+        # ONNX MiniLM (no torch); same model the retriever uses.
+        _embedder = metrics.CountingEmbeddings(get_embeddings("all-MiniLM-L6-v2"))
     return _embedder
 
 

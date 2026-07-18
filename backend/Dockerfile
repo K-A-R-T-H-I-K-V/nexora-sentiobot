@@ -2,14 +2,15 @@
 #
 # Stage 1 (builder) installs the Python deps (incl. build-essential for any
 # native wheels) into an isolated venv. Stage 2 (runtime) copies just that venv
-# and the app, so build-essential is NOT in the final image. Torch is the +cpu
-# build (see requirements.txt) which keeps the image ~3.2GB instead of ~13GB.
+# and the app, so build-essential is NOT in the final image. Embeddings run on
+# ONNX Runtime (fastembed), NOT PyTorch, so the image is ~500MB (was ~2.8GB with
+# torch) and fits free scale-to-zero hosts.
 #
-# The RAG index (vector_db / parent_docstore / parents.pkl) is BAKED in by the
-# COPY below: unlike .env / venv / caches, it is NOT listed in .dockerignore, so
-# it is included in the build context and copied into the image. That makes the
-# container self-contained (no persistent volume). A corpus change means
-# re-running ingest and rebuilding the image.
+# Two things are BAKED in so the container is self-contained (no volume, no
+# cold-start download): the RAG index (vector_db / parent_docstore / parents.pkl,
+# NOT excluded by .dockerignore) and the ONNX embedding model (downloaded during
+# build into FASTEMBED_CACHE_DIR). A corpus change means re-running ingest and
+# rebuilding the image.
 
 # ---- Stage 1: builder ----
 FROM python:3.11-slim AS builder
@@ -22,8 +23,13 @@ RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 COPY requirements.txt /app/requirements.txt
-# The PyTorch CPU extra-index-url is declared inside requirements.txt.
-RUN pip install --no-cache-dir -r /app/requirements.txt
+# --timeout/--retries so a slow or flaky network does not fail the build.
+RUN pip install --no-cache-dir --timeout 120 --retries 5 -r /app/requirements.txt
+
+# Bake the ONNX embedding model into the image so there is no first-request
+# download on a cold start (it lands in FASTEMBED_CACHE_DIR, copied to runtime).
+ENV FASTEMBED_CACHE_DIR=/opt/fastembed
+RUN python -c "from fastembed import TextEmbedding; TextEmbedding(model_name='sentence-transformers/all-MiniLM-L6-v2', cache_dir='/opt/fastembed')"
 
 # ---- Stage 2: runtime ----
 FROM python:3.11-slim AS runtime
@@ -33,10 +39,14 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl && rm -rf /var/lib/apt/lists/*
 
-# Bring in the prebuilt venv (no build tools in the final image).
+# Bring in the prebuilt venv (no build tools in the final image) and the baked
+# ONNX embedding model.
 COPY --from=builder /opt/venv /opt/venv
+COPY --from=builder /opt/fastembed /opt/fastembed
 ENV PATH="/opt/venv/bin:$PATH"
 ENV PYTHONUNBUFFERED=1
+ENV FASTEMBED_CACHE_DIR=/opt/fastembed
+ENV TOKENIZERS_PARALLELISM=false
 
 # Copy the backend source + baked index into the package dir, so that
 # `backend.api.main:app` and all `backend.*` imports resolve as they do locally.

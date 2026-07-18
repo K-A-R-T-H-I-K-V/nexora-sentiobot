@@ -111,12 +111,12 @@ def build_mq_retriever():
 def build_base_ensemble():
     """Free, local base ensemble (no multi-query) for RAGAS context retrieval."""
     import pickle
-    from langchain_huggingface import HuggingFaceEmbeddings
     from langchain_chroma import Chroma
     from langchain_community.retrievers import BM25Retriever
     from langchain.retrievers import EnsembleRetriever
+    from backend.core.onnx_embeddings import get_embeddings
     s = get_settings()
-    emb = HuggingFaceEmbeddings(model_name=s.embedding_model)
+    emb = get_embeddings(s.embedding_model)
     vs = Chroma(persist_directory=s.vector_db_path, embedding_function=emb)
     with open(s.parent_list_path, "rb") as f:
         parents = pickle.load(f)

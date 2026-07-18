@@ -32,12 +32,12 @@ RESULTS_DIR = Path(os.environ.get("SENTIOBOT_RESULTS_DIR", str(REPO / "results")
 
 def build_base_ensemble():
     """Replicates get_retriever's ensemble EXACTLY, minus the multi-query wrapper."""
-    from langchain_huggingface import HuggingFaceEmbeddings
     from langchain_chroma import Chroma
     from langchain_community.retrievers import BM25Retriever
     from langchain.retrievers import EnsembleRetriever
+    from backend.core.onnx_embeddings import get_embeddings
     s = get_settings()
-    emb = HuggingFaceEmbeddings(model_name=s.embedding_model)
+    emb = get_embeddings(s.embedding_model)
     vs = Chroma(persist_directory=s.vector_db_path, embedding_function=emb)
     with open(s.parent_list_path, "rb") as f:
         parents = pickle.load(f)

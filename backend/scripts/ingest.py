@@ -73,13 +73,13 @@ NAMESPACE_UUID = uuid.UUID("6ba7b810-9dad-11d1-80b4-00c04fd430c8")
 
 def _import_ml():
     global LocalFileStore, create_kv_docstore, Document, CSVLoader
-    global Chroma, HuggingFaceEmbeddings
+    global Chroma, get_embeddings
     from langchain.storage import LocalFileStore
     from langchain.storage._lc_store import create_kv_docstore
     from langchain.docstore.document import Document
     from langchain_community.document_loaders import CSVLoader
     from langchain_chroma import Chroma
-    from langchain_huggingface import HuggingFaceEmbeddings
+    from backend.core.onnx_embeddings import get_embeddings
 
 
 # ── Pre-flight checks ─────────────────────────────────────────────────────────
@@ -292,11 +292,8 @@ def build_vector_store(docs_to_embed: List[Any], dry_run: bool) -> None:
         log.info("  [DRY RUN] Would embed %d docs → %s", len(docs_to_embed), DB_PATH)
         return
 
-    log.info("  Loading embedding model (all-MiniLM-L6-v2)…")
-    embedding_model = HuggingFaceEmbeddings(
-        model_name="all-MiniLM-L6-v2",
-        model_kwargs={"device": "cpu"},
-    )
+    log.info("  Loading embedding model (all-MiniLM-L6-v2, ONNX)…")
+    embedding_model = get_embeddings("all-MiniLM-L6-v2")
 
     # On Windows, ChromaDB holds SQLite WAL file locks that survive del + gc.
     # Atomic tmp→rename is impossible. Instead: delete old store first, then

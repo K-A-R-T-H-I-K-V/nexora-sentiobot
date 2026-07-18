@@ -857,7 +857,7 @@ zero-leak property, the input-filter false-positive check, the authz denials
 build. The live LLM suites stay as local/reviewer tools. A green build should mean
 "no regression in anything we can check for free and for certain", and it does.
 
-## Part 12 - Shipping it: scale-to-zero economics, secrets, and the CORS handshake (Increment 9)
+## Part 14 - Shipping it: scale-to-zero economics, secrets, and the CORS handshake (Increment 9)
 
 Deploy is where a few production concepts become concrete.
 
@@ -890,3 +890,37 @@ laptop" has been the wrong bar all along; for a public URL it is doubly so.
 Re-run a real chat AND a security probe (injection refused, cross-user denied)
 against the PUBLIC url, because deployment reintroduces issues local testing never
 sees: a missing env var, a too-permissive CORS, a secret that did not load.
+
+## Part 15 - The dependency is usually the fat, not your code (Increment 9)
+
+Deploy hit a wall the plan did not predict: the free hosts we picked evaporated.
+Hugging Face put Docker Spaces behind a paid plan; Google Cloud Run needs a card
+the dev (a student, RuPay only) could not use. The real blocker underneath was
+not the host - it was that our backend image was ~2.8GB and wanted ~1GB of RAM,
+which does not fit the free 512MB tiers that exist without a card.
+
+Where did 2.8GB come from? Almost entirely ONE dependency: PyTorch. We used torch
+for exactly one thing - running a tiny 90MB embedding model (all-MiniLM-L6-v2) to
+turn text into vectors. torch drags in ~2GB of numeric/CUDA-adjacent libraries to
+do that. The lesson that generalizes: when an image or a memory number is scary,
+profile the DEPENDENCIES before you blame your code. The fat is usually one heavy
+library pulled in for a sliver of what it can do.
+
+The fix was to run the SAME model on a lighter engine. ONNX Runtime (via
+fastembed) executes the exact same MiniLM weights without torch. We checked it the
+only way that counts: we measured. Query embeddings came out at cosine 1.0 versus
+the torch model, and retrieval hit@5 stayed 0.913 with the identical miss set
+against the EXISTING index - so no re-ingest, and the frozen baseline held. Image:
+~2.8GB -> ~500MB. Memory: ~1GB -> ~300MB. It now fits a free 512MB host, and cold
+starts got faster too.
+
+Two habits worth keeping:
+- A swap of a core component is only safe if you can PROVE equivalence with a
+  number, not a hope. "It is the same model" is a claim; "cosine 1.0 and hit@5
+  0.913 unchanged" is evidence. We swapped a load-bearing part precisely because
+  the eval could catch a regression instantly.
+- Match your dependencies to your DEPLOYMENT reality, not just your dev box. torch
+  was fine on a laptop and fine in a paid container; it was the single thing making
+  the app un-deployable for free. Constraints (no card, 512MB) are a design input,
+  and sometimes the cleanest answer to "where can I host this?" is "make the thing
+  small enough to host anywhere."

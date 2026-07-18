@@ -38,7 +38,6 @@ from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, ToolMe
 from langchain_core.documents import Document
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_groq import ChatGroq
-from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
 from langchain_community.retrievers import BM25Retriever
 from langchain.retrievers import EnsembleRetriever
@@ -51,6 +50,7 @@ from langgraph.graph.message import add_messages
 from backend.core.config import get_settings
 from backend.core.request_context import current_user_id, current_user_products
 from backend.core import metrics
+from backend.core.onnx_embeddings import get_embeddings
 from backend.core.output_guard import OutputGuard
 from backend.agent.tools import check_order_status, check_warranty_status, create_support_ticket
 
@@ -185,9 +185,9 @@ def get_retriever():
         return _retriever
 
     s = get_settings()
-    # Wrapped only to count embedding ops (same vectors); measurement only.
+    # ONNX MiniLM (no torch); wrapped only to count embedding ops (measurement).
     embedding_model = metrics.CountingEmbeddings(
-        HuggingFaceEmbeddings(model_name=s.embedding_model)
+        get_embeddings(s.embedding_model)
     )
 
     vectorstore = Chroma(

@@ -1235,12 +1235,14 @@ shared helper. No regression: hit@5 0.913 (now a CI gate); own-resource access
 intact.
 
 GATE: fresh clone -> docker compose up -> both services serve a real request (YES);
-CI has the four free suites + lint + frontend build (YES). MET. HONEST CAVEAT: the
-workflow has NOT been executed on GitHub yet (no push this session; pushing is a
-separate ask). Every CI STEP was verified green locally (ruff clean, 19 tests
-pass, frontend builds in-container), so the pipeline is green-by-construction, but
-"CI green on a push" is confirmed only once pushed. Reviewer verifies from a clean
-checkout (the fresh-clone path above reproduces it). Next: push to trigger CI, then
+CI has the free suites + lint + frontend build (YES). MET AND CONFIRMED GREEN ON
+GITHUB: v2-fullstack pushed to origin; GitHub Actions run 29639353876 passed, both
+jobs green - "backend - lint + tests (free)" 1m34s (ruff + 19 tests incl the
+cross-user authz denial suite, the injection guards, and the deterministic
+retrieval eval hit@5==0.913) and "frontend - build" 42s. No secrets used in CI.
+(History note: the branch commits were later rewritten to strip the Claude
+co-author trailer at the dev's request and force-pushed; file contents byte-
+identical, CI re-ran green.) Next: reviewer verifies from a clean checkout, then
 P6 (deploy) on the verified app-layer model; RLS-with-JWT remains a ratified
 post-P6 defense-in-depth increment.
 

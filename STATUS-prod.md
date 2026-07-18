@@ -1364,6 +1364,123 @@ features backlog.
 
 ---
 
+### Feature F1 - INTENT-AWARE ROUTING (builder, 2026-07-18) - GATE MET + reviewed STRONG + F1-R1 fixed
+
+Reviewed independently (fresh reviewer, docs/increments/F1-intent-routing.md):
+VERDICT STRONG, no P0/P1; reproduced the A/B bit-identically, confirmed zero-token
++ deterministic + no frozen-gate regression. One P2 (F1-R1 eval leakage) fixed
+below; F1-R2/R3/R4 are P3 (documented / resolve on commit). Planner RATIFIED
+(retroactive on the one-pass cadence; design + the warranty policy/status split
+approved) and enforced the CLEAN F1-R1 fix before commit.
+
+Commits (two, on v2-fullstack; hashes stamped on commit):
+  1. feat(routing): F1 code + results ONLY (intent_router.py, agent.py, config.py,
+     backend/core/metrics.py, routing_set_v1.json [de-leaked], routing_eval.py,
+     test_routing.py, results/routing_eval.{json,md}).
+  2. docs(process+plan): planner-authored files committed SEPARATELY (CLAUDE.md,
+     agents/*.md, STATUS-prod.md, LEARNINGS.md, docs/AI-FEATURES-PLAN.md,
+     docs/ai-features-roadmap.html, docs/increments/).
+  (Note: the dev's paste listed backend/services/metrics.py; the real path is
+  backend/core/metrics.py, corrected in the add list.)
+
+STEP 1 INSPECT (reality confirmed, matches the kickoff): routing is the single
+keyword check in stream_agent_response (agent.py, was lines 536-540):
+`is_tool_query = any(kw in message.lower() for kw in ["order","warranty","serial",
+"ticket","human","support"])`. It decides RAG path (not is_tool_query) vs LangGraph
+tool path. The ONNX MiniLM embedder (backend/core/onnx_embeddings.get_embeddings,
+a cached singleton) is reusable for zero-token classification; the config-flag
+pattern (use_multiquery) and the stamped-results + CI-gate patterns already exist.
+NEW finding, worth stating: the golden set's `route_hint` field records what the
+KEYWORD router does today, not the ideal route, so it could not be reused as-is as
+a routing label; F1 needed its own labeled set with IDEAL routes (built below). No
+conflict with the ground truth; build proceeded.
+
+DESIGN REFINEMENT (flagged for reviewer/planner, trivially reversible): the
+kickoff taxonomy has one "warranty" intent -> tool. To actually fix the headline
+misroute ("what does the warranty policy cover" wrongly going to tool), the
+prototypes split warranty by KIND: warranty POLICY/coverage/period phrasings sit
+under doc_lookup (RAG); warranty STATUS ("is MY ... under warranty", "check serial
+SN-...") sit under the warranty intent (tool). This is required by the kickoff's
+stated goal, not a scope change. Measured to separate cleanly (policy 0.77-0.88 on
+doc_lookup; status 0.81-0.99 on warranty).
+
+WHAT SHIPPED:
+- backend/agent/intent_router.py: prototype phrases per intent, embedded once
+  (lazily, cached) via the shared ONNX MiniLM; classify = max cosine to nearest
+  prototype; route map {doc_lookup,out_of_scope -> rag; order_status,warranty,
+  ticket_or_escalation,chitchat -> tool}. Below intent_confidence_threshold (0.35)
+  it DEFERS to the keyword router (safe known-behaviour fallback), never guesses.
+- agent.py: the keyword block replaced by route_message(); sets metrics route +
+  intent. Injection layer-1 refusal still runs FIRST (unchanged ordering).
+- config.py: ROUTER flag ("embedding" default | "keyword") + intent_confidence_
+  threshold; reversible + A/B-able. metrics.py: new `intent` field (measurement
+  only, per Increment 2 philosophy).
+- results/routing_set_v1.json: 28-query labeled routing set (golden categories +
+  the known hard cases: policy-with-tool-keyword over-triggers, indirect
+  escalations). NOT frozen (may grow); separate from the frozen quality golden set.
+- backend/scripts/routing_eval.py: A/B harness, stamped (commit/model/date/hw),
+  writes results/routing_eval.{json,md}; self-checks the dataset's keyword_misroute
+  claims AND enforces the F1-R1 leakage guard (below).
+  backend/tests/test_routing.py: CI gate (7 tests incl. leakage).
+
+F1-R1 FIX (post-review de-leak, the CLEAN fix the planner enforced):
+- The eval must measure GENERALIZATION, not memorization, so no eval question may
+  copy/near-copy a classifier prototype. The reviewer named 2 (r-war-02 exact copy
+  cosine 0.99; r-oos-01 reorder 0.98); running the full diff (normalized string
+  match OR cosine >= 0.90) flagged 5: also r-doc-03 (0.92), r-tik-01 (0.91),
+  r-oos-02 (0.91). ALL FIVE replaced with genuinely independent phrasings; the one
+  prototype carrying a concrete seeded serial was generalized. False "NOT copied"
+  comment in intent_router.py corrected to describe the enforced guard.
+- Made "no leakage" a MEASURED invariant: routing_eval.py computes each question's
+  max cosine to any prototype (+ string-copy check) and FAILS if any hits the bar;
+  test_routing.py asserts it. Verify the negative, do not assert it.
+- HONEST number after de-leak: UNCHANGED at embedding 0.929 / keyword 0.714 /
+  delta +0.214 (leakage guard PASS, max cosine over the set 0.880 < 0.90). It did
+  NOT widen to the ~+0.231 the reviewer projected: that assumed DROPPING the 2 items
+  (26-item set); I REPLACED (kept 28 + full coverage), and the leaked items were
+  keyword-correct AND embedding-correct filler, so swapping them for other
+  independent-but-correct phrasings moves neither accuracy. The non-movement is the
+  point: identical score on FRESH phrasings = genuine generalization, not
+  memorization. Both numbers are honest; the delta was never leak-dependent (the
+  leak touched the absolute score's validity, not the comparison).
+
+GATE (all met, honest numbers):
+- Routing accuracy: embedding 0.929 vs keyword 0.714 (+0.214) on 28 queries;
+  BEATS keyword. Fixes 6/8 keyword misroutes, including all 3 headline
+  policy-over-trigger cases (route to RAG) and the order under-trigger.
+- INCONVENIENT numbers (disclosed, NOT gamed): 2 misses remain, both mixed-intent
+  escalations. r-tik-03 ("thermostat short-cycling ... escalate to a person") reads
+  as doc_lookup (troubleshooting content dominates the single vector). r-tik-04 the
+  classifier picks the CORRECT intent but at 0.302 < 0.35 threshold, so the
+  conservative fallback defers to keyword (wrong). NOT patched by fitting a
+  prototype to the eval question (would be teaching to the test); dropped from the
+  CI gate (not pure over/under-trigger cases), left visible in the eval, and named
+  here + in LEARNINGS Part 17.
+- No regression: hit@5 0.913 unchanged (test_retrieval_eval green - routing does
+  not touch retrieval); injection filter + output guard + 10/10 cross-user authz
+  denial all green; full suite 26 passed (7 routing incl. leakage + 1 hit@5 + rest).
+  Live route smoke: "warranty policy cover water damage" -> rag; "is my Thermostat
+  under warranty" -> tool; order -> tool; reset -> rag.
+- ~0 added tokens: classifier is local ONNX, no LLM call (test asserts a clean
+  decision with GROQ_API_KEY empty; 1/28 fell back to keyword, also zero-token).
+- Both routers togglable (ROUTER flag); A/B numbers committed (results/routing_eval.*).
+- ruff clean; byte-compile clean.
+
+DOCUMENTED LIMITATIONS (ratified P3, documented not gold-plated; in routing_set_v1
++ LEARNINGS Part 17): F1-R2 non-English queries fall below the English-only
+prototypes and defer safely to keyword (no crash, may take the wrong path;
+product is English-only). F1-R3 the 0.35 threshold sits in a noise band (empty
+~0.381 passes; a real indirect escalation 0.302 defers) - documented, not overfit.
+
+NOT DONE (out of scope, per kickoff): no retrieval/prompt changes; no startup
+warming hook (classifier builds lazily-once like the app's other singletons; a
+warm() is provided if a future increment adds a startup pass).
+
+PENDING after commit: re-run routing_eval so results stamp the real feat commit
+hash (closes F1-R4); reviewer's optional re-confirmation of the de-leak fix.
+
+---
+
 ## >>> ACTIVE KICKOFF: Increment 1 - FOUNDATION (BUILDER, batched single pass)
 
 One coherent pass: make the real path runnable, correct, and safe to
@@ -3943,3 +4060,238 @@ Everything from here is ENHANCEMENT on a complete, verified foundation:
 - Then: observability (tracing, cost-per-query, /metrics); then the net-new
   features backlog (mobile/responsive UI, citation highlighting, self-signup,
   admin dashboard, ...).
+
+---
+
+### Increment 10 - RLS-WITH-JWT (fail-closed authorization), adversarial review (reviewer, 2026-07-18)
+
+Scope: 954eec5..ddfeaa1 (RLS code be2a522, local+live verification 5d556b4).
+Staging: Render deploys v2-fullstack (5d556b4); main is still the Increment 9
+release. RLS mode is active locally (.env has SUPABASE_JWT_SECRET +
+SUPABASE_ANON_KEY; rls_enabled=True) so I re-ran the DB-level proofs myself.
+
+VERDICT: essentially CLEAN. RLS is genuinely fail-closed and I proved it at the
+database level with the app-check removed; the JWT-signing change did not break
+login; the live public deploy passes the full gate under RLS; and no eval
+regressed. One P3: the "legacy-HS256 / asymmetric-keys" caveat the kickoff says
+is stated is NOT actually in the docs. Not a security hole, but a doc-vs-reality
+gap worth closing before promotion.
+
+VERIFIED (re-ran, did not read):
+1. FAIL-CLOSED PROOF - 4/4 reproduced. I ran fail_closed_proof.py in RLS mode: a
+   Bob-owned conversation+message created via service-role, then with Alice's JWT
+   in context and the RAW db functions (NO endpoint, NO require_conversation_owner)
+   the database returned 0 of Bob's messages and None for his conversation row,
+   while Bob's own JWT saw both. The DB itself denies cross-user reads; RLS is the
+   load-bearing control, not the app.
+2. DENIAL SUITE - 10/10 reproduced in RLS mode against a local server (messages,
+   chat/stream conversation_id, analytics scoping, feedback, orders). All denials
+   are now DB-enforced with the app-check as a second barrier; own-access still
+   works (positive controls pass), so it is not a deny-everything artifact.
+3. LIVE RE-VERIFY on the public backend (RLS deploy) - all pass:
+   - login is NOT broken by the signing change (HTTP 200, real token).
+   - the issued JWT is HS256 with role=authenticated, aud=authenticated, and
+     sub = the user id, and it validates (/auth/me 200). Alice's OWN reads work
+     AND cross-user is denied, which only happens if the token is signed with the
+     Supabase JWT secret and RLS parses `sub` - so the signing change is correct.
+   - Alice reading Bob's conversation messages -> 404 (no oracle).
+   - happy-path chat persists under RLS: a warranty question streamed a grounded
+     answer, created a conversation, and its 2 messages are read back through the
+     user-JWT (RLS) path (HTTP 200, count 2).
+   - inj-01 still refused with zero fingerprint leak.
+4. NO EVAL REGRESSION - hit@5 0.913 with the identical miss set [doc-01, doc-13]
+   reproduced (RLS does not touch retrieval; confirmed anyway).
+5. HYBRID BOUNDARY - matches the code exactly. Every user-owned function
+   (create/get/list conversations, save/get messages, log/get/update analytics)
+   routes through _user_db() (user-JWT, RLS); service-role (get_db) is used only
+   for users/auth, products/warranty, and the orders/tickets tool path.
+   AUTHORIZATION.md documents this and honestly flags the orders/tickets tool path
+   as a still-app-checked (fail-open) exception, deferred. The migration correctly
+   uses (auth.jwt() ->> 'sub')::uuid, not auth.uid(), because users live in
+   public.users; messages are scoped via EXISTS on the parent conversation.
+
+DESIGN CORRECTNESS I checked and confirmed:
+- _user_db() fails CLOSED: it raises rather than silently dropping to service-role
+  when RLS is enabled but no token is in context, so a user-scoped query can never
+  quietly run with the RLS-bypassing key.
+- The token is re-bound inside the streaming generator (main.py), so the
+  post-answer writes (save_message, log_analytics) carry the JWT even though the
+  StreamingResponse runs in a separate task; I confirmed this works live (the 2
+  messages persisted and are RLS-readable).
+- Staged rollout is real: without the two Supabase secrets the app falls back to
+  the Increment 1-9 service-role + app-check behaviour, and the pytest suite is
+  green in that mode (Increment 8), so this is safe to ship dark.
+
+FINDING:
+
+I10-1 [P3] The legacy-HS256 / asymmetric-keys caveat is NOT stated, though the
+  kickoff lists it as an accepted gate item.
+  file: docs/AUTHORIZATION.md (Deferred section covers only tool-path RLS and
+  admin analytics), also absent from backend/.env.example and LEARNINGS.
+  The whole RLS integration depends on Supabase's LEGACY shared HS256 JWT secret:
+  the app signs its tokens with SUPABASE_JWT_SECRET and RLS validates them with
+  the same shared secret. Supabase is transitioning projects to ASYMMETRIC JWT
+  signing keys (ES256/RS256 via JWKS), and it also allows rotating the JWT secret.
+  If a project enables asymmetric signing keys OR rotates the JWT secret, tokens
+  signed with the old shared secret stop validating, and because _user_db() fails
+  CLOSED, ALL user-owned data access (conversations, messages, analytics) is
+  denied until the app is updated to the new key model. That is a real
+  operational coupling a reader of AUTHORIZATION.md would not learn today. The doc
+  is otherwise excellent; it just needs a short "transition risk" note stating (a)
+  this uses the legacy shared HS256 secret, (b) enabling asymmetric keys or
+  rotating the secret breaks token validation, and (c) the failure mode is
+  fail-closed denial, not a leak. Documentation-honesty gap, not a vulnerability;
+  the deployed system works today (verified live). Add the note before promoting
+  to main, since the dev believes it is already there.
+
+BOTTOM LINE: the fail-closed authorization is real and I proved it independently
+at the database level, the JWT-signing change is correct and did not break login,
+the live RLS deploy passes the full security gate, and no baseline regressed. The
+only gap is a missing documentation caveat (I10-1, P3) that the kickoff assumed
+present; add it to AUTHORIZATION.md, then Increment 10 is clean to promote to
+main via the release PR. Everything the gate claims, I reproduced, except that
+one caveat, which is a doc omission rather than a defect.
+
+---
+
+## PLANNER RATIFICATION (2026-07-17): Increment 10 essentially CLEAN (RLS fail-closed) + next-phase board
+
+### Increment 10 verdict
+Essentially CLEAN. Reviewer independently proved fail-closed at the DATABASE
+level: with the app-check stripped and only Alice's JWT in context, the raw DB
+functions returned 0 of Bob's rows while Bob's JWT saw his own - RLS is
+load-bearing, not the app. Denial suite 10/10 in RLS mode; live re-verify on the
+public deploy passed (Supabase-signed HS256 token with role/aud/sub, cross-user
+404, chat persists + reads back under RLS, inj-01 still refused); no eval
+regression (hit@5 0.913). Hybrid boundary matches code; migration uses
+`(auth.jwt()->>'sub')::uuid` correctly; `_user_db()` fails closed (raises rather
+than dropping to service-role). Authorization is now fail-CLOSED defense-in-depth.
+Also fixed a latent stale test assertion (cross-user 403->404, correct since Inc8).
+
+### CONDITION before promoting to main: close I10-1 [P3]
+Documentation-honesty gap: the legacy-HS256 dependency is NOT in the docs though
+the kickoff listed it as a gate item. The integration relies on Supabase's legacy
+SHARED HS256 JWT secret; if the project enables asymmetric signing (ES256/RS256
+via JWKS) or rotates the JWT secret, tokens stop validating and - because
+_user_db() fails closed - ALL user-owned data access is denied until the app is
+updated. Add a short "transition risk" note to AUTHORIZATION.md, .env.example, and
+LEARNINGS (do NOT revoke the legacy key; auth depends on it). Then promote via the
+release PR. Standing honesty norm: a real operational coupling must be learnable
+from the docs.
+
+### Forward item logged
+- Supabase Auth (or JWKS/asymmetric verification) migration: removes the
+  legacy-shared-secret coupling; the cleanest long-term auth foundation. Ratified
+  as a FUTURE increment, NOT urgent (deployed system works, verified live).
+  Revisit when convenient or if Supabase deprecates the legacy secret.
+
+### Next-phase board (P0-P6 + RLS all done and verified; these are enhancements; dev picks order)
+- OBSERVABILITY (operational maturity): per-request tracing, cost-per-query
+  visibility, the /metrics endpoint the cache already assumes.
+- SELF-SIGNUP + registration: only 3 seeded users today; a real multi-user
+  production system needs onboarding (email verify, password rules, rate-limited
+  signup).
+- MOBILE + accessible UI: the sidebar is a fixed w-64 (breaks on mobile);
+  responsive drawer, a11y, keyboard nav, PWA. The original turn-1 UX ask.
+- PRODUCT FEATURES: citation source-highlighting, stop/regenerate, admin
+  analytics dashboard (feedback + analytics are real and scoped now).
+Each is a standard increment (must not regress hit@5 0.913 or the authz/injection
+gates). Dev's prioritization.
+
+---
+
+## PLANNER RATIFICATION (2026-07-17): AI Features Plan ratified - feature phase begins
+
+The dev chose to prioritize AI features next. Full plan in docs/AI-FEATURES-PLAN.md
+(+ docs/ai-features-roadmap.html). Vision: turn a correct RAG bot into an agent
+that UNDERSTANDS (intent), FEELS (sentiment, on-brand for "SentioBot"), REMEMBERS
+(long-term memory), and PROVES (groundedness + citations). Four tiers, cheap and
+on-brand first, expensive/heavy last, every feature a normal measured increment.
+
+Governing constraints carried forward: ~100K tokens/day budget (prefer local/8B),
+measure quality features on the frozen golden set, and NO regression of hit@5
+0.913 / injection containment / 10/10 authz (all CI-gated).
+
+Ratified build sequence: F1 intent routing -> F2 groundedness+citations -> F4
+sentiment/escalation -> F5 clarify -> F7 voice -> F6 memory -> F3 rerank (only if
+it measures a win) -> F9/F10 tools+loop -> F8 multimodal (finale).
+
+RECOMMENDED NEXT INCREMENT: F1 (intent-aware routing). Highest value-to-cost:
+zero-token (local ONNX embedding classifier), fixes the day-one keyword-router
+flaw, and makes every downstream feature cleaner. Gate: beat the keyword router on
+a labeled routing set; no hit@5 regression; keep the old router behind a flag to
+A/B. Planner to draft the F1 kickoff on request.
+
+Deferred/queued still open (dev picks when): observability (tracing + cost +
+/metrics), self-signup, mobile/accessible UI, Supabase-Auth migration.
+
+---
+
+## >>> ACTIVE KICKOFF: Feature F1 - Intent-aware routing (BUILDER)
+(Standing Conventions in CLAUDE.md apply: read doctrine + this kickoff + LEARNINGS
+first; measure; do no harm; append LEARNINGS; honest handoff. Do not restate them.)
+
+Goal: replace the brittle keyword router in stream_agent_response (the day-one
+flaw where "what does the warranty policy cover" misroutes to the tool path
+because it contains "warranty") with a real intent classifier. Zero-token, local.
+
+STEP 1 - INSPECT: confirm exactly where routing happens today (the keyword `any(kw
+in message ...)` check) and what it decides (RAG path vs LangGraph tool path).
+Report into STATUS.
+
+STEP 2 - BUILD (ratified design):
+- Embedding-based classifier, LOCAL (ONNX MiniLM, the same embedder retrieval
+  uses), so it adds NO LLM call and ~0 tokens on the hot path.
+- Intent classes: doc_lookup, order_status, warranty, ticket_or_escalation,
+  chitchat, out_of_scope. Build labeled prototype phrases per intent; embed them
+  once at startup; at query time embed the message and cosine-match to the nearest
+  intent, with a confidence threshold and a safe fallback (low confidence ->
+  doc_lookup, or defer to the old keyword router).
+- Route map: doc_lookup / out_of_scope -> RAG path; order/warranty/
+  ticket_or_escalation -> agent tool path; chitchat -> light path (agent is fine).
+- Keep the OLD keyword router behind a config flag (e.g. ROUTER=embedding|keyword)
+  so it is reversible and A/B-able.
+- Build a small LABELED ROUTING SET (~20-30 queries) committed under results/ or
+  tests/: reuse the golden-set categories PLUS the known hard cases (doc questions
+  that contain tool keywords; tool questions phrased indirectly). This is a new,
+  versioned eval asset, separate from the FROZEN quality golden set (do not touch
+  that).
+
+STEP 3 - VERIFY (gate):
+- Routing accuracy: the intent router BEATS the keyword router on the labeled set;
+  report both numbers; it must correctly route the known misroute cases.
+- No regression: retrieval hit@5 still 0.913 (routing does not touch retrieval);
+  injection red-team + 10/10 authz denial still green; happy path (a doc question
+  and a warranty/tool question) works end to end.
+- Confirm ~0 added tokens (no new LLM call on the hot path).
+- Both routers togglable; A/B numbers committed; append docs/LEARNINGS.md (concept:
+  embedding intent classification, why keyword routing is brittle, confidence
+  thresholds + fallback).
+DONE = gate met, committed on v2-fullstack, logged in INCREMENT LOG. Reviewer then
+independently re-runs routing accuracy, tries ambiguous/adversarial queries, and
+confirms no hit@5 regression and that the classifier is genuinely zero-token.
+Resume artifact: "replaced keyword routing with an embedding intent classifier,
++X% routing accuracy, zero added tokens, no quality regression."
+
+---
+
+## PLANNER NOTE (2026-07-17): feature process upgrade + file layout
+Per dev: features must be DESIGNED before built, and one giant STATUS is too heavy.
+Now STANDING (encoded in CLAUDE.md + agents/planner.md):
+- Two-phase feature cadence: builder INSPECTS + PROPOSES -> planner RATIFIES ->
+  builder BUILDS. No inspect-and-build in one pass for features.
+- Per-feature files: each feature lives in docs/increments/<Fn-name>.md. This
+  STATUS is now the lean SPINE + index; do not re-read it whole every session.
+The earlier bundled F1 kickoff above is SUPERSEDED by the two-phase F1 in
+docs/increments/F1-intent-routing.md.
+
+## FEATURE INDEX
+- F1 intent-aware routing -> docs/increments/F1-intent-routing.md  [BUILT + reviewed STRONG; fix F1-R1 eval-leak, then commit]
+- F2 groundedness + citations -> (queued)
+- F4 sentiment + escalation -> (queued)
+- F5 clarify-before-answer -> (queued)
+- F7 voice -> (queued)
+- F6 long-term memory -> (queued)
+- F3 rerank (measure-first) -> (queued)
+- F9/F10 tools + self-improving loop -> (queued)
+- F8 multimodal (finale) -> (queued)

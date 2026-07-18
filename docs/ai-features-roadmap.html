@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SentioBot: AI Features Roadmap</title>
+<style>
+  :root{
+    --bg:#080c12; --panel:#111a26; --panel2:#0f1722; --border:#1f2c3d; --border2:#2a3b52;
+    --ink:#e8eef6; --muted:#93a4bb; --faint:#5f7086;
+    --cyan:#22d3ee; --violet:#a78bfa; --teal:#2dd4bf; --amber:#fbbf24; --rose:#fb7185;
+    --r:16px;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;line-height:1.6;
+    background:
+      radial-gradient(1100px 560px at 82% -8%, rgba(34,211,238,.12), transparent 60%),
+      radial-gradient(900px 520px at -8% 8%, rgba(167,139,250,.12), transparent 55%),
+      var(--bg);
+    -webkit-font-smoothing:antialiased;}
+  .wrap{max-width:1140px;margin:0 auto;padding:0 20px 100px}
+  header.hero{padding:64px 0 30px}
+  .eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:12px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--cyan);border:1px solid var(--border2);background:rgba(34,211,238,.06);padding:6px 12px;border-radius:999px}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--cyan);box-shadow:0 0 12px var(--cyan)}
+  h1{font-size:clamp(30px,5.2vw,52px);line-height:1.07;margin:20px 0 14px;letter-spacing:-.02em;font-weight:800}
+  h1 .g{background:linear-gradient(100deg,var(--cyan),var(--violet));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .sub{font-size:clamp(15px,2.4vw,19px);color:var(--muted);max-width:820px}
+  .sub b{color:var(--ink)}
+
+  .vision{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:28px}
+  .vcard{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--border);border-radius:14px;padding:16px}
+  .vcard .n{font-size:22px}
+  .vcard h4{margin:8px 0 4px;font-size:14.5px}
+  .vcard p{margin:0;color:var(--muted);font-size:12.5px}
+
+  section{margin-top:52px}
+  .tier-head{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:6px}
+  .tnum{font-family:ui-monospace,Menlo,monospace;font-size:13px;color:var(--cyan);border:1px solid var(--border2);padding:4px 10px;border-radius:8px}
+  h2{font-size:clamp(20px,3vw,26px);margin:0;letter-spacing:-.01em;font-weight:750}
+  .tlead{color:var(--muted);margin:6px 0 20px;max-width:840px}
+
+  .feat{display:grid;grid-template-columns:1fr;gap:14px}
+  .card{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--border);border-radius:var(--r);padding:18px 20px}
+  .card .top{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap}
+  .card h3{margin:0;font-size:16.5px;display:flex;align-items:center;gap:10px}
+  .fid{font-family:ui-monospace,monospace;font-weight:800;font-size:12px;color:var(--bg);background:var(--cyan);border-radius:7px;padding:3px 8px}
+  .t2 .fid{background:var(--violet)} .t3 .fid{background:var(--teal);color:#04231f} .t4 .fid{background:var(--amber);color:#3a2a00}
+  .chips{display:flex;gap:7px;flex-wrap:wrap}
+  .chip{font-size:11px;font-weight:600;padding:3px 9px;border-radius:999px;border:1px solid var(--border2);color:var(--muted);white-space:nowrap}
+  .chip.cost0{color:#04231f;background:var(--teal)} .chip.cost1{color:#3a2a00;background:var(--amber)} .chip.cost2{color:#fff;background:var(--rose)}
+  .chip.impact{color:var(--cyan);border-color:var(--cyan)}
+  .card p{margin:9px 0 0;color:var(--muted);font-size:14px}
+  .card .arch{margin-top:10px;font-size:13px;color:var(--muted);border-left:2px solid var(--border2);padding:6px 0 6px 12px}
+  .card .arch b{color:var(--ink)}
+
+  .learn{border:1px solid var(--border2);border-left:3px solid var(--cyan);border-radius:12px;
+    background:linear-gradient(100deg,rgba(34,211,238,.06),transparent);padding:16px 18px;margin-top:14px}
+  .learn h4{margin:0 0 6px;font-size:14px;color:var(--cyan)}
+  .learn p{margin:0;color:var(--muted);font-size:13.5px}
+
+  /* sequence */
+  .seq{display:flex;flex-wrap:wrap;gap:10px;margin-top:8px}
+  .step{display:flex;align-items:center;gap:9px;background:var(--panel2);border:1px solid var(--border);border-radius:999px;padding:7px 13px;font-size:13px}
+  .step .k{font-family:ui-monospace,monospace;font-weight:800;color:var(--cyan)}
+  .step .m{color:var(--muted)}
+
+  footer{margin-top:60px;padding-top:22px;border-top:1px solid var(--border);color:var(--faint);font-size:12.5px}
+  @media(max-width:820px){ .vision{grid-template-columns:1fr 1fr} }
+  @media(max-width:520px){ .vision{grid-template-columns:1fr} header.hero{padding:44px 0 22px} }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hero">
+    <span class="eyebrow"><span class="dot"></span>AI Features Roadmap &nbsp;/&nbsp; built on a verified production foundation</span>
+    <h1>From a RAG bot to an <span class="g">agent that understands, feels, remembers, and proves</span></h1>
+    <p class="sub">The foundation is done: measured, hardened, deployed, fail-closed. Now the fun part. SentioBot means <b>"I feel"</b> in Latin, and right now it feels nothing. This roadmap turns a correct support bot into a product people remember, cheap and on-brand features first, every one measured so it never breaks what is underneath.</p>
+
+    <div class="vision">
+      <div class="vcard"><div class="n">&#129504;</div><h4>Understands</h4><p>Gets what you mean even when you phrase it badly.</p></div>
+      <div class="vcard"><div class="n">&#128150;</div><h4>Feels</h4><p>Notices frustration, adapts, never makes an angry user wait.</p></div>
+      <div class="vcard"><div class="n">&#129504;</div><h4>Remembers</h4><p>Knows you across visits and is proactive with it.</p></div>
+      <div class="vcard"><div class="n">&#9989;</div><h4>Proves</h4><p>Every answer visibly grounded in a real source, or it says so.</p></div>
+    </div>
+  </header>
+
+  <div class="learn">
+    <h4>The rules every feature obeys</h4>
+    <p>Token budget is the hard limit (~100K/day on Groq free, so prefer local/zero-token and the cheap 8B model). Anything touching answer quality is measured against the frozen 50-question set before it ships. Nothing may regress hit@5 0.913, the injection red-team, or the 10/10 cross-user denial suite, all CI-gated. Security travels with the feature: uploads and memory carry their own defense.</p>
+  </div>
+
+  <!-- TIER 1 -->
+  <section>
+    <div class="tier-head"><span class="tnum">TIER 1</span><h2>The Smarter Core</h2></div>
+    <p class="tlead">Fix the known weak spots and earn trust. Cheap, high-impact, makes everything downstream cleaner.</p>
+    <div class="feat">
+      <div class="card">
+        <div class="top"><h3><span class="fid">F1</span>Intent-aware routing</h3><div class="chips"><span class="chip cost0">~0 tokens</span><span class="chip impact">high impact</span><span class="chip">do first</span></div></div>
+        <p>Retire the brittle keyword router (the word "warranty" wrongly sends a policy <i>question</i> to the tool path). A real classifier fixes a whole class of answers at once, and it is a flaw flagged since day-one recon.</p>
+        <div class="arch"><b>How:</b> embed the query with the local ONNX model, match to labeled intent prototype vectors (doc / order / warranty / ticket / chitchat / escalation). Zero-token, deterministic. A new node before the router; keep the old router behind a flag to A/B. <b>Gate:</b> beat the keyword router on a labeled routing set; no hit@5 drop.</div>
+      </div>
+      <div class="card">
+        <div class="top"><h3><span class="fid">F2</span>Groundedness guard + source highlighting</h3><div class="chips"><span class="chip cost0">~0 to small</span><span class="chip impact">trust</span></div></div>
+        <p>Verify each answer is supported by the retrieved context and show a "Grounded" badge; highlight the exact source sentence behind each claim. Answers the one question every user and recruiter has: "how do I know it is not making this up?"</p>
+        <div class="arch"><b>How:</b> a verify step after generation (local NLI/overlap heuristic first, an 8B "is this supported?" call only if needed); add <code>grounded</code> + <code>citations</code> to the existing <code>done</code> SSE event; the frontend renders the badge + highlighted spans. <b>Gate:</b> the badge must track RAGAS faithfulness; never a false green.</div>
+      </div>
+      <div class="card">
+        <div class="top"><h3><span class="fid">F3</span>Reranking (measure-first, optional)</h3><div class="chips"><span class="chip cost0">~0 tokens</span><span class="chip">optional</span></div></div>
+        <p>Re-order retrieved passages with a local cross-encoder so the best context leads. May lift faithfulness, especially as the corpus grows.</p>
+        <div class="arch"><b>How:</b> a local ONNX reranker node between retrieve and generate, behind a flag. <b>Honest risk:</b> may NOT beat 0.913 on a small corpus. Ship only if it measurably wins on the frozen set. Do it only if retrieval is the next real bottleneck.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- TIER 2 -->
+  <section class="t2">
+    <div class="tier-head"><span class="tnum" style="color:var(--violet);border-color:#4b3b7a">TIER 2</span><h2>Emotional Intelligence</h2></div>
+    <p class="tlead">The differentiator, and the reason the app is called SentioBot. Mostly cheap (local / 8B), and the part people remember.</p>
+    <div class="feat">
+      <div class="card">
+        <div class="top"><h3><span class="fid">F4</span>Sentiment &amp; frustration awareness</h3><div class="chips"><span class="chip cost0">~0 to small</span><span class="chip impact">flagship</span><span class="chip">on-brand</span></div></div>
+        <p>Detect the user's mood each turn, adapt tone, and when frustration crosses a threshold, proactively offer a human instead of making them ask. It delivers on the product's name and it is genuinely good support. "The bot noticed I was annoyed and got me to a human" is a story.</p>
+        <div class="arch"><b>How:</b> a sentiment node (local classifier or 8B label+score); a running frustration signal in state feeds the prompt ("be concise, acknowledge, offer a human"); a threshold triggers escalation. <b>Gate:</b> detect accurately, escalate on frustrated cases and NOT on calm ones (a false escalation is annoying). Subtle: never announce "you seem angry," just adapt.</div>
+      </div>
+      <div class="card">
+        <div class="top"><h3><span class="fid">F5</span>Clarify before answering</h3><div class="chips"><span class="chip cost0">~0 tokens</span><span class="chip impact">human-like</span></div></div>
+        <p>When a query is ambiguous or missing a needed detail, ask ONE targeted question instead of guessing. The difference between a form and a conversation, and it cuts wrong answers.</p>
+        <div class="arch"><b>How:</b> a slot-check keyed to the F1 intent (warranty needs a serial; resolve from the user profile first, ask only if truly unknown). A clarify branch in the graph. Bias toward resolving from context; at most one question.</div>
+      </div>
+      <div class="card">
+        <div class="top"><h3><span class="fid">F6</span>Long-term user memory</h3><div class="chips"><span class="chip cost1">small, recurring</span><span class="chip impact">personalization</span></div></div>
+        <p>Remember durable facts across sessions (products, past issues, preferences) and be proactive: "Last time your Thermostat Pro had a pairing issue, is that resolved?" The biggest jump in perceived intelligence, a concierge instead of a kiosk.</p>
+        <div class="arch"><b>How:</b> a <code>user_memory</code> table under the SAME fail-closed RLS (a user's memory is theirs only); summarize-and-store on conversation END (one 8B call, budgeted, not per turn); load top facts at session start. <b>Guards:</b> only store facts traceable to the user or a tool (never model guesses); a "what SentioBot remembers about me" panel to view/clear, itself a trust feature.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- TIER 3 -->
+  <section class="t3">
+    <div class="tier-head"><span class="tnum" style="color:var(--teal);border-color:#1f5a52">TIER 3</span><h2>Multimodal &amp; Voice</h2></div>
+    <p class="tlead">The wow factor. One is nearly free (Groq hosts Whisper); one is the big, deliberate finale.</p>
+    <div class="feat">
+      <div class="card">
+        <div class="top"><h3><span class="fid">F7</span>Voice mode</h3><div class="chips"><span class="chip cost0">cheap (Whisper)</span><span class="chip impact">demos brilliantly</span></div></div>
+        <p>Press the mic, speak, get a streamed answer read back. High cool-factor, real accessibility win, and it fits the stack almost for free.</p>
+        <div class="arch"><b>How:</b> browser captures audio, a <code>/voice/transcribe</code> endpoint runs Groq <code>whisper-large-v3</code>, the transcript flows into the EXISTING chat pipeline unchanged, browser SpeechSynthesis reads the answer back (zero cost). Text chat stays the default, so nothing regresses.</div>
+      </div>
+      <div class="card">
+        <div class="top"><h3><span class="fid">F8</span>Multimodal RAG (see the manual, and your device)</h3><div class="chips"><span class="chip cost2">higher cost</span><span class="chip impact">most impressive</span><span class="chip">do last</span></div></div>
+        <p>Ingest diagrams from the manuals ("show me the wiring diagram"), and let a user upload a PHOTO of their device ("that blinking red LED means..."). Support is deeply visual; this unlocks questions a text bot cannot touch.</p>
+        <div class="arch"><b>How:</b> a Groq vision model + caption/embed manual images for retrieval + an image-upload path. <b>Carries its own security:</b> user uploads reopen the INDIRECT-injection surface, so text in an uploaded image is DATA, never instructions, the injection defense must be proven on this path before it ships. Budget vision tokens carefully. The finale, once the core is excellent.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- TIER 4 -->
+  <section class="t4">
+    <div class="tier-head"><span class="tnum" style="color:var(--amber);border-color:#5a4a1f">TIER 4</span><h2>Agentic Expansion</h2></div>
+    <p class="tlead">It does more, and it learns from itself.</p>
+    <div class="feat">
+      <div class="card">
+        <div class="top"><h3><span class="fid">F9</span>More real actions</h3><div class="chips"><span class="chip cost0">minimal</span></div></div>
+        <p>New tools: start a return/RMA, schedule a callback, recommend a compatible product for what the user owns.</p>
+        <div class="arch"><b>How:</b> each is a new LangGraph tool + a Supabase table under RLS, using the ContextVar user_id pattern (never trust the LLM for identity). Every new tool inherits the fail-closed pattern and gets a denial-suite case.</div>
+      </div>
+      <div class="card">
+        <div class="top"><h3><span class="fid">F10</span>Self-improving loop</h3><div class="chips"><span class="chip cost0">cheap, batched</span><span class="chip impact">closes the loop</span></div></div>
+        <p>Mine thumbs-down and low-groundedness answers to surface the questions SentioBot answers badly, a prioritized list for corpus or golden-set expansion. It connects the eval harness you built back to the product.</p>
+        <div class="arch"><b>How:</b> an analytics query + a clustering/summarization pass over negative-feedback queries, surfaced in an admin dashboard. Pairs with feedback volume.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SEQUENCE -->
+  <section>
+    <div class="tier-head"><span class="tnum">ORDER</span><h2>Recommended build sequence</h2></div>
+    <p class="tlead">Front-load the cheap, high-impact, on-brand wins; defer the expensive, heavy ones. Best cool-factor per day of work, and it fits the token budget.</p>
+    <div class="seq">
+      <span class="step"><span class="k">1</span><span class="m">F1 Intent routing</span></span>
+      <span class="step"><span class="k">2</span><span class="m">F2 Grounded + citations</span></span>
+      <span class="step"><span class="k">3</span><span class="m">F4 Sentiment/escalate</span></span>
+      <span class="step"><span class="k">4</span><span class="m">F5 Clarify</span></span>
+      <span class="step"><span class="k">5</span><span class="m">F7 Voice</span></span>
+      <span class="step"><span class="k">6</span><span class="m">F6 Memory</span></span>
+      <span class="step"><span class="k">7</span><span class="m">F3 Rerank (if it wins)</span></span>
+      <span class="step"><span class="k">8</span><span class="m">F9 / F10 tools + loop</span></span>
+      <span class="step"><span class="k">9</span><span class="m">F8 Multimodal (finale)</span></span>
+    </div>
+    <div class="learn">
+      <h4>The discipline stays, even for features</h4>
+      <p>Each feature is a normal increment: planner ratifies the design and gate, builder builds behind a flag and measures against the frozen baseline, reviewer re-runs the gate and tries to break it. It ships only if it improves what it targets AND regresses nothing (hit@5 0.913, injection containment, 10/10 authz). Every feature adds a learnings entry so the "why" is kept, not just the "what."</p>
+    </div>
+  </section>
+
+  <footer>
+    SentioBot AI Features Roadmap &nbsp;&middot;&nbsp; planner, 2026-07-17 &nbsp;&middot;&nbsp; companion to docs/AI-FEATURES-PLAN.md (authoritative). Ship Tier 1 + Tier 2 and it stops being "a RAG chatbot" and becomes the agent that understands what you mean, feels how you feel, remembers who you are, and proves what it says.
+  </footer>
+
+</div>
+</body>
+</html>

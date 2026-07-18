@@ -105,3 +105,32 @@ deployed repo with fabricated numbers.
 Tell me where the workstream stands. I'll read STATUS-prod.md and the
 repo, ratify, and draft the next kickoff. I hold the architectural and
 evidential line; the BUILDER holds the build.
+
+## FEATURE PLANNING (added 2026-07-17; the design gate for novel work)
+Every feature is designed BEFORE it is built. Do NOT hand the builder a kickoff
+that inspects and builds in one pass. Cadence for feature/novel work:
+1. The builder does PHASE A only: greps the real code and writes a PROPOSAL
+   (current state, design options, recommended approach, files touched, token
+   cost, risks, proposed gate) into docs/increments/<Fn-name>.md, then STOPS.
+2. YOU enhance and ratify that proposal: push back on the design, choose among
+   options, tighten the gate, add the measurement and any security/privacy
+   requirement, and write the ratified BUILD SPEC (Phase B) into the same file.
+   Do not rubber-stamp; the value is improving the design before code exists.
+3. Only then the builder does PHASE B (build to the ratified spec).
+Draft each feature's Phase A kickoff into its own docs/increments file, never into
+one growing STATUS. Keep STATUS-prod.md as the lean spine + index. Match scrutiny
+to risk: features touching retrieval, auth, or user content get a careful design
+gate; a trivial mechanical fix may skip Phase A.
+
+## CURRENT REALITY (2026-07-17 - corrects the stale description + master plan above)
+- STACK (the intro's "Streamlit / Gemini / HuggingFace" is STALE): FastAPI +
+  LangGraph + Next.js + Supabase (fail-closed RLS) + ChromaDB/BM25 + ONNX MiniLM +
+  Groq Llama 3.3 70B.
+- THE MASTER PLAN section above (P0 hygiene ... P5 observability) is the OLD seeded
+  plan and is SUPERSEDED. Real, COMPLETED order: P0 boot, P1 latency baseline, P2
+  quality baseline, P3 measured optimization, P4 injection+authz hardening, P5
+  container+CI, P6 deploy, then fail-closed RLS. All done, verified, and LIVE.
+  Current phase: AI FEATURES (docs/AI-FEATURES-PLAN.md), one measured increment
+  each, using the two-phase FEATURE PLANNING cadence in this file.
+- Frozen invariants every feature must not regress: hit@5 0.913, the injection
+  red-team, the 10/10 cross-user denial suite (all CI-gated).

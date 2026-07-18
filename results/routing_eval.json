@@ -1,0 +1,554 @@
+{
+  "test": "F1 routing A/B: keyword router vs embedding intent classifier (free, deterministic, 0 tokens)",
+  "commit": "e1dfec713fa42148544f52c5c6dee1122c9ea9b0",
+  "as_of": "2026-07-18",
+  "hardware": "Windows 11 (build 10.0.26200) | AMD64 | py3.11.9",
+  "embedding_model": "all-MiniLM-L6-v2 (ONNX Runtime via fastembed)",
+  "router_config": {
+    "threshold": 0.35,
+    "intents": [
+      "doc_lookup",
+      "out_of_scope",
+      "order_status",
+      "warranty",
+      "ticket_or_escalation",
+      "chitchat"
+    ]
+  },
+  "routing_set_version": "v1",
+  "total": 28,
+  "keyword_accuracy": 0.7143,
+  "embedding_accuracy": 0.9286,
+  "delta": 0.2143,
+  "keyword_misroute_subset": {
+    "total": 8,
+    "fixed_by_embedding": 6
+  },
+  "embedding_by_intent": {
+    "doc_lookup": "12/12",
+    "order_status": "3/3",
+    "warranty": "4/4",
+    "ticket_or_escalation": "2/4",
+    "chitchat": "2/2",
+    "out_of_scope": "3/3"
+  },
+  "low_confidence_fallbacks": 1,
+  "leakage_guard": {
+    "threshold": 0.9,
+    "max_cosine_over_set": 0.8798,
+    "leaks": []
+  },
+  "limitations": [
+    "F1-R2 (non-English): prototypes are English-only, so a non-English query (e.g. 'cual es el estado de mi pedido') scores below threshold and falls back to the keyword router (safe, no crash, but may take the wrong path). The corpus and product are English-only, so this is low-impact; multilingual routing would need multilingual prototypes or a language-aware step.",
+    "F1-R3 (threshold noise band): the 0.35 confidence threshold sits in a noise band. Empty/whitespace input scores ~0.381 (above -> tool) while a genuine indirect escalation (r-tik-04) scores 0.302 (below -> deferred and missed). The endpoint rejects empty messages upstream, so the empty-string case is harmless; the threshold is documented rather than overfit to this small set."
+  ],
+  "stale_labels": [],
+  "gate_failures": [],
+  "rows": [
+    {
+      "id": "r-doc-01",
+      "question": "How do I install the LumiGlow smart bulb?",
+      "ideal_intent": "doc_lookup",
+      "ideal_route": "rag",
+      "keyword_route": "rag",
+      "keyword_ok": true,
+      "embedding_route": "rag",
+      "embedding_intent": "doc_lookup",
+      "embedding_ok": true,
+      "confidence": 0.8047,
+      "top_scores": {
+        "doc_lookup": 0.8047,
+        "warranty": 0.3496,
+        "order_status": 0.1817
+      },
+      "keyword_misroute_claimed": false
+    },
+    {
+      "id": "r-doc-02",
+      "question": "How do I factory reset the LumiGlow bulb?",
+      "ideal_intent": "doc_lookup",
+      "ideal_route": "rag",
+      "keyword_route": "rag",
+      "keyword_ok": true,
+      "embedding_route": "rag",
+      "embedding_intent": "doc_lookup",
+      "embedding_ok": true,
+      "confidence": 0.5786,
+      "top_scores": {
+        "doc_lookup": 0.5786,
+        "warranty": 0.3197,
+        "ticket_or_escalation": 0.2528
+      },
+      "keyword_misroute_claimed": false
+    },
+    {
+      "id": "r-doc-03",
+      "question": "My security camera keeps dropping off the Wi-Fi network at night, how can I stop that?",
+      "ideal_intent": "doc_lookup",
+      "ideal_route": "rag",
+      "keyword_route": "rag",
+      "keyword_ok": true,
+      "embedding_route": "rag",
+      "embedding_intent": "doc_lookup",
+      "embedding_ok": true,
+      "confidence": 0.5052,
+      "top_scores": {
+        "doc_lookup": 0.5052,
+        "ticket_or_escalation": 0.3168,
+        "warranty": 0.1769
+      },
+      "keyword_misroute_claimed": false
+    },
+    {
+      "id": "r-doc-04",
+      "question": "How high should I mount the SecureSphere 360 camera for best detection?",
+      "ideal_intent": "doc_lookup",
+      "ideal_route": "rag",
+      "keyword_route": "rag",
+      "keyword_ok": true,
+      "embedding_route": "rag",
+      "embedding_intent": "doc_lookup",
+      "embedding_ok": true,
+      "confidence": 0.413,
+      "top_scores": {
+        "doc_lookup": 0.413,
+        "ticket_or_escalation": 0.2692,
+        "warranty": 0.1661
+      },
+      "keyword_misroute_claimed": false
+    },
+    {
+      "id": "r-doc-05",
+      "question": "Is the SecureSphere 360 camera fully waterproof?",
+      "ideal_intent": "doc_lookup",
+      "ideal_route": "rag",
+      "keyword_route": "rag",
+      "keyword_ok": true,
+      "embedding_route": "rag",
+      "embedding_intent": "doc_lookup",
+      "embedding_ok": true,
+      "confidence": 0.4255,
+      "top_scores": {
+        "doc_lookup": 0.4255,
+        "ticket_or_escalation": 0.2648,
+        "warranty": 0.2544
+      },
+      "keyword_misroute_claimed": false
+    },
+    {
+      "id": "r-doc-06",
+      "question": "What Wi-Fi band does the LumiGlow bulb need for setup?",
+      "ideal_intent": "doc_lookup",
+      "ideal_route": "rag",
+      "keyword_route": "rag",
+      "keyword_ok": true,
+      "embedding_route": "rag",
+      "embedding_intent": "doc_lookup",
+      "embedding_ok": true,
+      "confidence": 0.6667,
+      "top_scores": {
+        "doc_lookup": 0.6667,
+        "out_of_scope": 0.2285,
+        "warranty": 0.2111
+      },
+      "keyword_misroute_claimed": false
+    },
+    {
+      "id": "r-doc-07",
+      "question": "How do I unfreeze a frozen Thermostat Pro screen?",
+      "ideal_intent": "doc_lookup",
+      "ideal_route": "rag",
+      "keyword_route": "rag",
+      "keyword_ok": true,
+      "embedding_route": "rag",
+      "embedding_intent": "doc_lookup",
+      "embedding_ok": true,
+      "confidence": 0.61,
+      "top_scores": {
+        "doc_lookup": 0.61,
+        "warranty": 0.3097,
+        "out_of_scope": 0.1441
+      },
+      "keyword_misroute_claimed": false
+    },
+    {
+      "id": "r-pol-01",
+      "question": "Does the warranty policy cover water or flood damage?",
+      "ideal_intent": "doc_lookup",
+      "ideal_route": "rag",
+      "keyword_route": "tool",
+      "keyword_ok": false,
+      "embedding_route": "rag",
+      "embedding_intent": "doc_lookup",
+      "embedding_ok": true,
+      "confidence": 0.8798,
+      "top_scores": {
+        "doc_lookup": 0.8798,
+        "warranty": 0.4977,
+        "ticket_or_escalation": 0.2807
+      },
+      "keyword_misroute_claimed": true
+    },
+    {
+      "id": "r-pol-02",
+      "question": "What is the warranty period for the Thermostat Pro compared with the LumiGlow lights?",
+      "ideal_intent": "doc_lookup",
+      "ideal_route": "rag",
+      "keyword_route": "tool",
+      "keyword_ok": false,
+      "embedding_route": "rag",
+      "embedding_intent": "doc_lookup",
+      "embedding_ok": true,
+      "confidence": 0.7712,
+      "top_scores": {
+        "doc_lookup": 0.7712,
+        "warranty": 0.6375,
+        "out_of_scope": 0.1995
+      },
+      "keyword_misroute_claimed": true
+    },
+    {
+      "id": "r-pol-03",
+      "question": "What are the hours for human customer support?",
+      "ideal_intent": "doc_lookup",
+      "ideal_route": "rag",
+      "keyword_route": "tool",
+      "keyword_ok": false,
+      "embedding_route": "rag",
+      "embedding_intent": "doc_lookup",
+      "embedding_ok": true,
+      "confidence": 0.8473,
+      "top_scores": {
+        "doc_lookup": 0.8473,
+        "ticket_or_escalation": 0.3355,
+        "warranty": 0.2979
+      },
+      "keyword_misroute_claimed": true
+    },
+    {
+      "id": "r-pol-04",
+      "question": "What is Nexora's return window and the condition for a full refund?",
+      "ideal_intent": "doc_lookup",
+      "ideal_route": "rag",
+      "keyword_route": "rag",
+      "keyword_ok": true,
+      "embedding_route": "rag",
+      "embedding_intent": "doc_lookup",
+      "embedding_ok": true,
+      "confidence": 0.5743,
+      "top_scores": {
+        "doc_lookup": 0.5743,
+        "warranty": 0.2304,
+        "order_status": 0.2094
+      },
+      "keyword_misroute_claimed": false
+    },
+    {
+      "id": "r-pol-05",
+      "question": "Does Nexora sell my personal data to third parties?",
+      "ideal_intent": "doc_lookup",
+      "ideal_route": "rag",
+      "keyword_route": "rag",
+      "keyword_ok": true,
+      "embedding_route": "rag",
+      "embedding_intent": "doc_lookup",
+      "embedding_ok": true,
+      "confidence": 0.5282,
+      "top_scores": {
+        "doc_lookup": 0.5282,
+        "order_status": 0.2562,
+        "warranty": 0.2259
+      },
+      "keyword_misroute_claimed": false
+    },
+    {
+      "id": "r-ord-01",
+      "question": "What is the status of order NX-2025-301?",
+      "ideal_intent": "order_status",
+      "ideal_route": "tool",
+      "keyword_route": "tool",
+      "keyword_ok": true,
+      "embedding_route": "tool",
+      "embedding_intent": "order_status",
+      "embedding_ok": true,
+      "confidence": 0.7008,
+      "top_scores": {
+        "order_status": 0.7008,
+        "warranty": 0.3485,
+        "doc_lookup": 0.1857
+      },
+      "keyword_misroute_claimed": false
+    },
+    {
+      "id": "r-ord-02",
+      "question": "Has order NX-2025-303 been delivered yet?",
+      "ideal_intent": "order_status",
+      "ideal_route": "tool",
+      "keyword_route": "tool",
+      "keyword_ok": true,
+      "embedding_route": "tool",
+      "embedding_intent": "order_status",
+      "embedding_ok": true,
+      "confidence": 0.6903,
+      "top_scores": {
+        "order_status": 0.6903,
+        "warranty": 0.3564,
+        "out_of_scope": 0.1699
+      },
+      "keyword_misroute_claimed": false
+    },
+    {
+      "id": "r-ord-03",
+      "question": "Can you tell me where my package NX-2025-302 is right now?",
+      "ideal_intent": "order_status",
+      "ideal_route": "tool",
+      "keyword_route": "rag",
+      "keyword_ok": false,
+      "embedding_route": "tool",
+      "embedding_intent": "order_status",
+      "embedding_ok": true,
+      "confidence": 0.6419,
+      "top_scores": {
+        "order_status": 0.6419,
+        "warranty": 0.2806,
+        "chitchat": 0.1943
+      },
+      "keyword_misroute_claimed": true
+    },
+    {
+      "id": "r-war-01",
+      "question": "Is my Nexora Thermostat Pro still under warranty?",
+      "ideal_intent": "warranty",
+      "ideal_route": "tool",
+      "keyword_route": "tool",
+      "keyword_ok": true,
+      "embedding_route": "tool",
+      "embedding_intent": "warranty",
+      "embedding_ok": true,
+      "confidence": 0.8124,
+      "top_scores": {
+        "warranty": 0.8124,
+        "doc_lookup": 0.6632,
+        "ticket_or_escalation": 0.2062
+      },
+      "keyword_misroute_claimed": false
+    },
+    {
+      "id": "r-war-02",
+      "question": "I registered my thermostat last year, can you tell me whether its warranty is still active?",
+      "ideal_intent": "warranty",
+      "ideal_route": "tool",
+      "keyword_route": "tool",
+      "keyword_ok": true,
+      "embedding_route": "tool",
+      "embedding_intent": "warranty",
+      "embedding_ok": true,
+      "confidence": 0.8458,
+      "top_scores": {
+        "warranty": 0.8458,
+        "doc_lookup": 0.7465,
+        "order_status": 0.2371
+      },
+      "keyword_misroute_claimed": false
+    },
+    {
+      "id": "r-war-03",
+      "question": "Is my LumiGlow smart light still under warranty?",
+      "ideal_intent": "warranty",
+      "ideal_route": "tool",
+      "keyword_route": "tool",
+      "keyword_ok": true,
+      "embedding_route": "tool",
+      "embedding_intent": "warranty",
+      "embedding_ok": true,
+      "confidence": 0.8603,
+      "top_scores": {
+        "warranty": 0.8603,
+        "doc_lookup": 0.4243,
+        "ticket_or_escalation": 0.3285
+      },
+      "keyword_misroute_claimed": false
+    },
+    {
+      "id": "r-war-04",
+      "question": "What is the warranty status of serial SN-NCS360-CAM789?",
+      "ideal_intent": "warranty",
+      "ideal_route": "tool",
+      "keyword_route": "tool",
+      "keyword_ok": true,
+      "embedding_route": "tool",
+      "embedding_intent": "warranty",
+      "embedding_ok": true,
+      "confidence": 0.6384,
+      "top_scores": {
+        "warranty": 0.6384,
+        "doc_lookup": 0.5625,
+        "ticket_or_escalation": 0.4073
+      },
+      "keyword_misroute_claimed": false
+    },
+    {
+      "id": "r-tik-01",
+      "question": "My camera issue is still not fixed; a support agent needs to handle it, please log a ticket.",
+      "ideal_intent": "ticket_or_escalation",
+      "ideal_route": "tool",
+      "keyword_route": "tool",
+      "keyword_ok": true,
+      "embedding_route": "tool",
+      "embedding_intent": "ticket_or_escalation",
+      "embedding_ok": true,
+      "confidence": 0.7178,
+      "top_scores": {
+        "ticket_or_escalation": 0.7178,
+        "doc_lookup": 0.3837,
+        "warranty": 0.3537
+      },
+      "keyword_misroute_claimed": false
+    },
+    {
+      "id": "r-tik-02",
+      "question": "Please open a support ticket for a camera that will not power on.",
+      "ideal_intent": "ticket_or_escalation",
+      "ideal_route": "tool",
+      "keyword_route": "tool",
+      "keyword_ok": true,
+      "embedding_route": "tool",
+      "embedding_intent": "ticket_or_escalation",
+      "embedding_ok": true,
+      "confidence": 0.7438,
+      "top_scores": {
+        "ticket_or_escalation": 0.7438,
+        "doc_lookup": 0.3365,
+        "warranty": 0.2823
+      },
+      "keyword_misroute_claimed": false
+    },
+    {
+      "id": "r-tik-03",
+      "question": "My thermostat keeps short-cycling and none of the fixes helped. Please escalate this to a person.",
+      "ideal_intent": "ticket_or_escalation",
+      "ideal_route": "tool",
+      "keyword_route": "rag",
+      "keyword_ok": false,
+      "embedding_route": "rag",
+      "embedding_intent": "doc_lookup",
+      "embedding_ok": false,
+      "confidence": 0.5204,
+      "top_scores": {
+        "doc_lookup": 0.5204,
+        "warranty": 0.4687,
+        "chitchat": 0.1814
+      },
+      "keyword_misroute_claimed": true
+    },
+    {
+      "id": "r-tik-04",
+      "question": "This is still not resolved. Can someone follow up with me directly?",
+      "ideal_intent": "ticket_or_escalation",
+      "ideal_route": "tool",
+      "keyword_route": "rag",
+      "keyword_ok": false,
+      "embedding_route": "rag",
+      "embedding_intent": "low_confidence_fallback",
+      "embedding_ok": false,
+      "confidence": 0.302,
+      "top_scores": {
+        "ticket_or_escalation": 0.302,
+        "chitchat": 0.2706,
+        "order_status": 0.226
+      },
+      "keyword_misroute_claimed": true
+    },
+    {
+      "id": "r-cht-01",
+      "question": "Hi there! Thanks for the help earlier.",
+      "ideal_intent": "chitchat",
+      "ideal_route": "tool",
+      "keyword_route": "rag",
+      "keyword_ok": false,
+      "embedding_route": "tool",
+      "embedding_intent": "chitchat",
+      "embedding_ok": true,
+      "confidence": 0.5134,
+      "top_scores": {
+        "chitchat": 0.5134,
+        "out_of_scope": 0.1496,
+        "ticket_or_escalation": 0.1264
+      },
+      "keyword_misroute_claimed": true
+    },
+    {
+      "id": "r-cht-02",
+      "question": "Good morning, what can you do for me?",
+      "ideal_intent": "chitchat",
+      "ideal_route": "tool",
+      "keyword_route": "rag",
+      "keyword_ok": false,
+      "embedding_route": "tool",
+      "embedding_intent": "chitchat",
+      "embedding_ok": true,
+      "confidence": 0.5944,
+      "top_scores": {
+        "chitchat": 0.5944,
+        "order_status": 0.2337,
+        "ticket_or_escalation": 0.2183
+      },
+      "keyword_misroute_claimed": true
+    },
+    {
+      "id": "r-oos-01",
+      "question": "Which laptop would you say is the best value for a student this year?",
+      "ideal_intent": "out_of_scope",
+      "ideal_route": "rag",
+      "keyword_route": "rag",
+      "keyword_ok": true,
+      "embedding_route": "rag",
+      "embedding_intent": "out_of_scope",
+      "embedding_ok": true,
+      "confidence": 0.3929,
+      "top_scores": {
+        "out_of_scope": 0.3929,
+        "warranty": 0.2595,
+        "order_status": 0.1772
+      },
+      "keyword_misroute_claimed": false
+    },
+    {
+      "id": "r-oos-02",
+      "question": "Can you help me choose a good dishwasher for my kitchen?",
+      "ideal_intent": "out_of_scope",
+      "ideal_route": "rag",
+      "keyword_route": "rag",
+      "keyword_ok": true,
+      "embedding_route": "rag",
+      "embedding_intent": "out_of_scope",
+      "embedding_ok": true,
+      "confidence": 0.4708,
+      "top_scores": {
+        "out_of_scope": 0.4708,
+        "order_status": 0.242,
+        "doc_lookup": 0.1129
+      },
+      "keyword_misroute_claimed": false
+    },
+    {
+      "id": "r-oos-03",
+      "question": "I have chest pain and a bad headache, what medication should I take?",
+      "ideal_intent": "out_of_scope",
+      "ideal_route": "rag",
+      "keyword_route": "rag",
+      "keyword_ok": true,
+      "embedding_route": "rag",
+      "embedding_intent": "out_of_scope",
+      "embedding_ok": true,
+      "confidence": 0.7315,
+      "top_scores": {
+        "out_of_scope": 0.7315,
+        "order_status": 0.1597,
+        "doc_lookup": 0.1002
+      },
+      "keyword_misroute_claimed": false
+    }
+  ],
+  "passed": true
+}

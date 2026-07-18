@@ -1281,8 +1281,12 @@ GATE (verified from EXTERNAL machines, not the dev's box):
 2. Real RAG chat streams a cited, personalized answer (8 sources) on the live
    site. YES (browser). /health + login also confirmed via curl from a separate
    machine.
-3. /health green on the public backend; CORS: ALLOWED_ORIGINS being tightened
-   from * to https://sentiobot.vercel.app (dev action).
+3. /health green on the public backend; CORS DONE: ALLOWED_ORIGINS scoped to
+   https://sentiobot.vercel.app - verified from an external machine (preflight
+   200 + Access-Control-Allow-Origin echoed for the Vercel origin; a random
+   evil origin gets no allow-origin). Keep-warm: cron-job.org pings
+   https://sentiobot-backend.onrender.com/health every 5 min (GitHub scheduled
+   workflow deferred until keep-warm.yml is on main at the release merge).
 4. LIVE security re-check on the PUBLIC backend: inj-01 prompt-extraction REFUSED
    (0 fingerprint leak); cross-user (Alice reads Bob's conversation) DENIED 404;
    Alice's own read 200. PASS - the injection + authz guarantees hold in prod.

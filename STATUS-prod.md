@@ -1248,6 +1248,63 @@ post-P6 defense-in-depth increment.
 
 ---
 
+### Increment 9 - P6 DEPLOY (builder, 2026-07-18) - LIVE
+
+LIVE URLS:
+- Frontend: https://sentiobot.vercel.app  (Vercel, free)
+- Backend:  https://sentiobot-backend.onrender.com  (Render free Docker, no card)
+
+Step 0 (Inc8 findings) done + CI green (run 29642381403, then 29640... series):
+I8-1 docker-build job (build from scratch on a clean runner + /health + assert no
+.env baked), I8-2 retrieval-eval test writes to a tmp path (no tracked dirtying),
+I8-3 Dockerfile comment fixed.
+
+DEPLOY-TARGET PIVOT (ratified Cloud Run + HF both fell through for a no-card
+student): HF Docker Spaces went PAID; Cloud Run needs a card RuPay can't satisfy.
+Root blocker was image size: torch made it ~2.8GB / ~1GB RAM, over the free 512MB
+tiers. FIX (commit a599bd7): run the SAME all-MiniLM-L6-v2 on ONNX Runtime
+(fastembed) instead of torch. Proven equivalent - query cosine 1.0 vs torch,
+retrieval hit@5 0.913 with the identical miss set against the EXISTING index (no
+re-ingest, frozen baseline holds). Result: image 2.8GB -> 1.5GB, RAM ~1GB ->
+282MB measured in-container under a 512MB cap (boots, real cited chat, no OOM).
+This made Render free viable. LEARNINGS Part 15.
+
+DEPLOYED: backend on Render via render.yaml Blueprint (Docker, free, 512MB,
+Singapore); image honours $PORT (Render uses 10000); secrets set in the Render
+dashboard (persist across deploys), never in git; DEBUG=false so the placeholder-
+JWT guard is enforced; fresh JWT_SECRET. Frontend on Vercel (vercel CLI, local
+v2-fullstack build), NEXT_PUBLIC_API_URL -> the Render backend, clean domain
+sentiobot.vercel.app.
+
+GATE (verified from EXTERNAL machines, not the dev's box):
+1. Public frontend loads; login works (real JWT). YES.
+2. Real RAG chat streams a cited, personalized answer (8 sources) on the live
+   site. YES (browser). /health + login also confirmed via curl from a separate
+   machine.
+3. /health green on the public backend; CORS: ALLOWED_ORIGINS being tightened
+   from * to https://sentiobot.vercel.app (dev action).
+4. LIVE security re-check on the PUBLIC backend: inj-01 prompt-extraction REFUSED
+   (0 fingerprint leak); cross-user (Alice reads Bob's conversation) DENIED 404;
+   Alice's own read 200. PASS - the injection + authz guarantees hold in prod.
+5. No secret in the image (CI asserts it); JWT_SECRET is a real 64-hex, not the
+   placeholder (DEBUG=false).
+
+MONTHLY COST: $0, no card anywhere (Render free + Vercel free + Supabase free +
+Groq free).
+
+OPEN / HONEST:
+- CORS tighten (ALLOWED_ORIGINS -> the Vercel origin) is the one remaining dev
+  click; the app works now because ALLOWED_ORIGINS=* still.
+- keep-warm cron (BACKEND_URL variable set) will NOT fire until keep-warm.yml is
+  on the DEFAULT branch: GitHub SCHEDULED workflows only run from main. Until the
+  v2-fullstack -> main release merge (P7), use an external pinger (UptimeRobot /
+  cron-job.org) or accept a cold start after ~15 min idle.
+- P7 remaining: honest README with the live URL + a clean v2-fullstack -> main
+  release PR (deferred deliberately so main = the shipped product). RLS-with-JWT
+  stays queued.
+
+---
+
 ## >>> ACTIVE KICKOFF: Increment 1 - FOUNDATION (BUILDER, batched single pass)
 
 One coherent pass: make the real path runnable, correct, and safe to

@@ -1309,6 +1309,61 @@ OPEN / HONEST:
 
 ---
 
+### Increment 10 - RLS-with-JWT (fail-closed authorization) (builder, 2026-07-18) - GATE MET (pending reviewer)
+
+Commits: be2a522 (code + migration + docs, staged/legacy-safe), 5d556b4 (local
+verification + denial-suite fix). Moves user-owned data (conversations, messages,
+analytics) from app-layer (fail-open) to DATABASE-enforced RLS (fail-closed);
+service-role retained for users/auth, products/warranty, and the orders/tickets
+tool path (documented exception).
+
+MECHANICS (per the ratified boundary): auth tokens are signed with the SUPABASE
+JWT secret (claims role=authenticated, aud=authenticated, sub=public.users.id) so
+Postgres RLS accepts them; get_current_user verifies with it and exposes the raw
+token via a ContextVar; database._user_db builds a per-request user-JWT client for
+the user-owned tables. Policies (supabase/migrations/increment10_rls.sql) use
+(auth.jwt() ->> 'sub')::uuid (NOT auth.uid(); our users live in public.users),
+messages via EXISTS on the parent conversation, + authenticated grants. STAGED:
+RLS activates only when SUPABASE_JWT_SECRET + SUPABASE_ANON_KEY are set AND the
+migration is applied; otherwise legacy behaviour (pytest green).
+
+SUPABASE CAVEAT (honest): the project migrated to asymmetric ECC signing keys; we
+cannot sign with the managed ECC private key, so we use the LEGACY HS256 shared
+secret (the "Legacy JWT Secret", which still signs the anon/service keys). Verified
+the correct key form empirically (the raw-string secret validates Supabase's own
+anon token; base64-decoded does not). Transitional dependency: do NOT revoke the
+legacy key; the clean long-term path is adopting Supabase Auth (future increment).
+
+VERIFIED LOCALLY (RLS mode, real Supabase): fail-closed proof 4/4
+(results/increment10_fail_closed.json) - with the app-check removed from the path,
+the DB returns ZERO of another user's rows (Alice denied Bob's messages +
+conversation; Bob sees his own); denial suite 10/10
+(results/authz_negative_test.json); login issues a Supabase-signed token; a
+happy-path chat creates a conversation + persists both messages through the
+user-JWT client; hit@5 0.913 unchanged. Also fixed a stale denial-suite assertion
+(it asserted 403 for cross-user conversation/feedback; correct is 404 - the I7-1
+no-oracle code, a test bug latent since Increment 8; now accepts 403/404).
+
+VERIFIED LIVE on the PUBLIC backend (after deploying 5d556b4 to Render from
+v2-fullstack + the two secrets): login token validates with the Supabase secret
+(RLS mode live, role/aud claims); Alice->Bob's conversation = 404 denied, own =
+200; happy-path chat cited answer + 2 messages persisted under RLS; inj-01 still
+refused (no leak).
+
+GATE: RLS policies per user-scoped table (yes); hybrid client boundary (yes);
+denial suite still 10/10 (yes); fail-closed proof passes (yes, 4/4); no
+happy-path/eval regression (hit@5 0.913; live chat works locally AND on the
+deploy); AUTHORIZATION.md updated to the hybrid model (yes); LEARNINGS Part 16;
+JWT-signing change verified not to break login (yes, local + live). MET.
+
+PENDING: reviewer independently re-runs the denial suite + the fail-closed proof
+and re-verifies the live deploy after the JWT-signing change; then the clean
+v2-fullstack -> main release PR (Render is on v2-fullstack for this staging
+verification; promote to main after sign-off). Then P7-observability + the
+features backlog.
+
+---
+
 ## >>> ACTIVE KICKOFF: Increment 1 - FOUNDATION (BUILDER, batched single pass)
 
 One coherent pass: make the real path runnable, correct, and safe to

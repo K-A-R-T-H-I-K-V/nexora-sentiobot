@@ -778,7 +778,7 @@ the Supabase SQL editor. The lesson in that friction: infrastructure changes
 "the system is fixed" until the migration actually runs and the live denial test
 goes green. State which one you have verified.
 
-## Part 11 - Fail-open vs fail-closed, and defense in depth (Increments 7 to 8)
+## Part 12 - Fail-open vs fail-closed, and defense in depth (Increments 7 to 8)
 
 Increment 7 fixed the authorization holes in application code and it is verified
 10/10. But there are two ways to enforce a rule, and the difference is a
@@ -811,3 +811,48 @@ buys most of the safety now. "Production grade" is not "every change immediately
 it is "every risk either fixed, or consciously owned with a mitigation and a
 plan." RLS-with-JWT stays on the board as a ratified defense-in-depth increment,
 neither dropped nor rushed.
+
+## Part 13 - Container + CI: make "it works" reproducible for anyone (Increment 8)
+
+Every increment before this proved something ON THIS MACHINE. Increment 8 makes
+"it works" true for a stranger with a fresh clone, and keeps it true on every
+future push. Three ideas worth keeping.
+
+Bake vs mount the index. The RAG index (the Chroma vectors, the BM25 parent list)
+has to come from somewhere at runtime. Two models: MOUNT it as a volume from the
+host (what we had), or BAKE it into the image (what we moved to). Mounting keeps
+the image small and lets you swap the index without rebuilding, which is right for
+a large, frequently-changing corpus on a server with a persistent disk. But our
+targets (Cloud Run, HF Spaces) scale to zero and have NO persistent volume, and
+our corpus is tiny (85 sections, ~2.7MB) and changes rarely. So we bake: the image
+is self-contained and runs anywhere with nothing to mount, at the cost of a rebuild
+when the corpus changes. The rule is not "baking is better", it is "match the
+artifact's delivery to its size and change-rate and the target's capabilities."
+
+A .dockerignore is a security control, not just a speed one. The old image did
+`COPY . /app/backend` with a .dockerignore that, in the new model, would have let
+`.env` in. That would bake real API keys and the JWT secret into an image layer,
+where anyone who pulls the image can read them - a credential leak that survives
+even if you later delete the file, because layers are immutable history. The fix:
+`.dockerignore` explicitly excludes `.env`, and credentials arrive only at RUN
+time as environment variables (compose `env_file`), never at build time. "What is
+in my image layers" is a question with security consequences.
+
+Security and eval tests belong in CI, not just in your memory. We built a
+cross-user denial suite (Increment 7) and an injection guard (Increments 5 to 6)
+and a deterministic retrieval eval (Increment 3). If they only ever run when
+someone remembers to run them, they protect nothing against the change six weeks
+from now that quietly drops an owner check or regresses retrieval. Putting them in
+CI turns each into a TRIPWIRE: a forgotten authorization check, a prompt-leak
+regression, or a hit@5 drop below 0.913 now fails the build before it merges. This
+is the concrete, cheap purchase of "fail-open on human error becomes caught by the
+pipeline" from Part 12. The discipline: a test that guards a property you care
+about is only doing its job if it runs automatically on every change.
+
+Keep the paid path out of CI. The red-team and RAGAS suites make real LLM calls
+and cost tokens and need secrets; they must never run in CI (flaky, expensive, and
+a secret-exposure surface). So CI runs the FREE, deterministic core: the guard's
+zero-leak property, the input-filter false-positive check, the authz denials
+(mocked DB), the retrieval eval (baked index, no tokens), lint, and the frontend
+build. The live LLM suites stay as local/reviewer tools. A green build should mean
+"no regression in anything we can check for free and for certain", and it does.

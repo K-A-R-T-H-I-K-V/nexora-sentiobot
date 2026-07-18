@@ -1193,6 +1193,59 @@ approval for foundational changes when needed to keep it production-grade).
 
 ---
 
+### Increment 8 - P5 container + CI (builder, 2026-07-18) - GATE MET (compose up proven; CI green locally, runs on push)
+
+Commits on v2-fullstack: 229e44e (bake index), 602de62 (container), 43891b2 (CI +
+tests + lint + I7-1), (this docs update).
+
+CONTAINER: backend/Dockerfile is now MULTI-STAGE (builder venv -> slim runtime,
+no build-essential in the final image); backend image 2.8GB (CPU torch; under the
+~3.2GB target), frontend 1.24GB. The RAG index (vector_db/parents.pkl/
+parent_docstore, ~2.7MB) is COMMITTED (229e44e) and BAKED into the image; compose
+DROPPED the volume mounts, so the image is self-contained for scale-to-zero
+targets. RATIFIED bake-not-mount: corpus change => re-run ingest + rebuild.
+SECURITY FIX found in the sweep: the old backend/.dockerignore did not keep .env
+out under the new model; rewrote it to exclude .env/venv/caches (creds now arrive
+only as runtime env vars, never baked into a layer).
+
+PROOF (cold-start, not "works in my venv"):
+- Working-tree `docker compose up`: backend /health 200, login (JWT via Supabase),
+  and one STREAMED chat all worked IN-CONTAINER - the answer came from the baked
+  index via the Groq LLM (RAG path).
+- FRESH CLONE (git clone of committed HEAD 43891b2; .env correctly ABSENT, baked
+  index present) -> cold `docker compose up --build` (full torch rebuild) -> BOTH
+  services serve real requests: backend /health 200 + login OK; frontend HTTP 200
+  serving "<title>SentioBot | Nexora Support</title>". Redis up. Clone (with its
+  copied .env) deleted after.
+
+CI (.github/workflows/ci.yml, all FREE, zero paid LLM, no secrets):
+- ruff lint (config pyproject.toml; clean after removing dead imports + the
+  leftover parent-docstore locals).
+- pytest backend/tests/ (19 tests, all pass locally): output-guard zero-leak +
+  fingerprint, injection input-filter false-positive/true-positive, cross-user
+  AUTHZ denial suite (mocked DB - a forgotten owner check fails the build), and
+  the DETERMINISTIC retrieval eval asserting hit@5 == 0.913 (guards the baseline).
+- frontend `npm run build` (also proven by the in-container image build).
+- The live LLM suites (red_team, RAGAS, adversarial_recheck) are intentionally
+  EXCLUDED from CI (paid + secrets); they stay local/reviewer tools.
+
+Also closed I7-1: require_conversation_owner / require_analytics_owner return 404
+for both not-found and not-authorized (no id-existence oracle); feedback uses the
+shared helper. No regression: hit@5 0.913 (now a CI gate); own-resource access
+intact.
+
+GATE: fresh clone -> docker compose up -> both services serve a real request (YES);
+CI has the four free suites + lint + frontend build (YES). MET. HONEST CAVEAT: the
+workflow has NOT been executed on GitHub yet (no push this session; pushing is a
+separate ask). Every CI STEP was verified green locally (ruff clean, 19 tests
+pass, frontend builds in-container), so the pipeline is green-by-construction, but
+"CI green on a push" is confirmed only once pushed. Reviewer verifies from a clean
+checkout (the fresh-clone path above reproduces it). Next: push to trigger CI, then
+P6 (deploy) on the verified app-layer model; RLS-with-JWT remains a ratified
+post-P6 defense-in-depth increment.
+
+---
+
 ## >>> ACTIVE KICKOFF: Increment 1 - FOUNDATION (BUILDER, batched single pass)
 
 One coherent pass: make the real path runnable, correct, and safe to

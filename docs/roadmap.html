@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SentioBot: Production-Grade Roadmap</title>
+<style>
+  :root{
+    --bg:#080c12; --bg2:#0c131d; --panel:#111a26; --panel2:#0f1722;
+    --border:#1f2c3d; --border2:#2a3b52;
+    --ink:#e8eef6; --muted:#93a4bb; --faint:#5f7086;
+    --cyan:#22d3ee; --cyan-d:#0e7490; --violet:#a78bfa; --teal:#2dd4bf;
+    --p0:#f87171; --p1:#fbbf24; --p2:#60a5fa; --ok:#34d399;
+    --shadow:0 10px 40px -12px rgba(0,0,0,.7);
+    --r:16px;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0; background:
+      radial-gradient(1200px 600px at 80% -10%, rgba(34,211,238,.10), transparent 60%),
+      radial-gradient(900px 500px at -10% 10%, rgba(167,139,250,.10), transparent 55%),
+      var(--bg);
+    color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;
+    line-height:1.6; -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1120px; margin:0 auto; padding:0 20px 96px}
+  a{color:var(--cyan); text-decoration:none}
+
+  /* Header */
+  header.hero{padding:64px 0 34px}
+  .eyebrow{display:inline-flex; align-items:center; gap:8px; font-size:12px; letter-spacing:.14em; text-transform:uppercase;
+    color:var(--cyan); border:1px solid var(--border2); background:rgba(34,211,238,.06); padding:6px 12px; border-radius:999px}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--cyan);box-shadow:0 0 12px var(--cyan)}
+  h1{font-size:clamp(30px,5vw,50px); line-height:1.08; margin:20px 0 12px; letter-spacing:-.02em; font-weight:800}
+  h1 .grad{background:linear-gradient(100deg,var(--cyan),var(--violet)); -webkit-background-clip:text; background-clip:text; color:transparent}
+  .sub{font-size:clamp(15px,2.4vw,19px); color:var(--muted); max-width:760px}
+  .metaline{margin-top:18px; display:flex; flex-wrap:wrap; gap:10px}
+  .pill{font-size:12.5px; color:var(--muted); border:1px solid var(--border); background:var(--panel2); padding:5px 11px; border-radius:999px}
+  .pill b{color:var(--ink)}
+
+  /* Section scaffolding */
+  section{margin-top:52px}
+  .sec-head{display:flex; align-items:baseline; gap:14px; margin-bottom:8px; flex-wrap:wrap}
+  .sec-num{font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:13px; color:var(--cyan); border:1px solid var(--border2); padding:3px 9px; border-radius:8px}
+  h2{font-size:clamp(21px,3vw,27px); margin:0; letter-spacing:-.01em; font-weight:750}
+  .sec-lead{color:var(--muted); margin:6px 0 22px; max-width:820px}
+
+  .grid{display:grid; gap:16px}
+  .g2{grid-template-columns:repeat(2,1fr)}
+  .g3{grid-template-columns:repeat(3,1fr)}
+  .card{background:linear-gradient(180deg,var(--panel),var(--panel2)); border:1px solid var(--border); border-radius:var(--r); padding:18px 20px}
+  .card h3{margin:0 0 6px; font-size:15.5px; display:flex; align-items:center; gap:9px}
+  .card p{margin:0; color:var(--muted); font-size:14px}
+  .ico{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;flex:0 0 auto;
+    background:rgba(34,211,238,.10); border:1px solid var(--border2); font-size:15px}
+
+  /* Reality vs claim */
+  .vs{display:grid; grid-template-columns:1fr 1fr; gap:0; border:1px solid var(--border); border-radius:var(--r); overflow:hidden}
+  .vs .col{padding:16px 18px}
+  .vs .was{background:rgba(248,113,113,.05); border-right:1px solid var(--border)}
+  .vs .is{background:rgba(52,211,153,.05)}
+  .vs h4{margin:0 0 10px; font-size:12px; letter-spacing:.1em; text-transform:uppercase}
+  .vs .was h4{color:var(--p0)} .vs .is h4{color:var(--ok)}
+  .vs ul{margin:0; padding-left:18px}
+  .vs li{margin:7px 0; font-size:13.5px; color:var(--muted)}
+  .vs li b{color:var(--ink); font-weight:600}
+
+  /* Defects */
+  .defect{display:flex; gap:14px; align-items:flex-start; padding:15px 16px; border:1px solid var(--border); border-radius:14px; background:var(--panel2)}
+  .sev{font-family:ui-monospace,monospace; font-size:11.5px; font-weight:700; padding:4px 9px; border-radius:8px; flex:0 0 auto; margin-top:2px}
+  .sev.P0{color:#fff; background:var(--p0)}
+  .sev.P1{color:#3a2a00; background:var(--p1)}
+  .sev.P2{color:#04213f; background:var(--p2)}
+  .defect .body h3{margin:0 0 3px; font-size:14.5px}
+  .defect .body p{margin:0; color:var(--muted); font-size:13.5px}
+
+  /* Timeline */
+  .tl{position:relative; margin-top:8px}
+  .tl::before{content:""; position:absolute; left:26px; top:8px; bottom:8px; width:2px;
+    background:linear-gradient(var(--cyan),var(--violet),var(--teal)); opacity:.55}
+  .phase{position:relative; padding:0 0 20px 68px}
+  .node{position:absolute; left:12px; top:2px; width:30px; height:30px; border-radius:50%;
+    background:var(--bg2); border:2px solid var(--cyan); display:grid; place-items:center;
+    font-family:ui-monospace,monospace; font-weight:700; font-size:12px; color:var(--cyan); z-index:1;
+    box-shadow:0 0 0 5px rgba(8,12,18,1), 0 0 18px -4px var(--cyan)}
+  .phase.feat .node{border-color:var(--violet); color:var(--violet); box-shadow:0 0 0 5px rgba(8,12,18,1),0 0 18px -4px var(--violet)}
+  .pcard{background:linear-gradient(180deg,var(--panel),var(--panel2)); border:1px solid var(--border); border-radius:var(--r); padding:16px 18px}
+  .pcard .top{display:flex; justify-content:space-between; gap:12px; align-items:flex-start; flex-wrap:wrap}
+  .pcard h3{margin:0; font-size:16.5px}
+  .tag{font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--faint); border:1px solid var(--border); padding:3px 9px; border-radius:999px; white-space:nowrap}
+  .tag.now{color:var(--cyan); border-color:var(--cyan-d); background:rgba(34,211,238,.08)}
+  .pcard p{margin:9px 0 0; color:var(--muted); font-size:14px}
+  .gate{margin-top:12px; display:flex; gap:9px; align-items:flex-start; font-size:13px; padding:9px 12px; border-radius:11px;
+    background:rgba(34,211,238,.05); border:1px solid var(--border2)}
+  .gate .k{color:var(--cyan); font-weight:700; flex:0 0 auto}
+  .artifact{margin-top:8px; font-size:12.5px; color:var(--faint)}
+  .artifact b{color:var(--teal)}
+
+  /* Candidates */
+  .cand{border:1px solid var(--border); border-radius:14px; background:var(--panel2); padding:15px 16px}
+  .cand .rk{display:flex; align-items:center; gap:10px; margin-bottom:8px}
+  .rank{font-family:ui-monospace,monospace; font-weight:800; font-size:13px; color:var(--bg); background:var(--cyan); border-radius:8px; padding:3px 9px}
+  .cand.def .rank{background:var(--violet)}
+  .cand h3{margin:0; font-size:14.5px}
+  .kv{display:grid; grid-template-columns:auto 1fr; gap:4px 12px; margin-top:8px; font-size:13px}
+  .kv .kk{color:var(--faint); text-transform:uppercase; letter-spacing:.06em; font-size:10.5px; padding-top:3px}
+  .kv .vv{color:var(--muted)}
+  .riskbadge{font-size:11px; font-weight:700; padding:2px 8px; border-radius:7px; margin-left:auto}
+  .r-low{color:#04213f;background:var(--ok)} .r-med{color:#3a2a00;background:var(--p1)} .r-high{color:#fff;background:var(--p0)}
+
+  /* Loop */
+  .loop{display:grid; grid-template-columns:repeat(3,1fr); gap:14px}
+  .role{border:1px solid var(--border); border-radius:14px; padding:16px; background:var(--panel2); position:relative}
+  .role h3{margin:0 0 4px; font-size:15px; display:flex; align-items:center; gap:8px}
+  .role p{margin:0; font-size:13px; color:var(--muted)}
+  .role .badge{font-size:11px; color:var(--faint)}
+  .role.plan{border-color:var(--cyan-d)} .role.build{border-color:var(--border2)} .role.rev{border-color:#7a2e2e}
+
+  /* Learning callout */
+  .learn{border:1px solid var(--border2); border-left:3px solid var(--cyan); border-radius:12px;
+    background:linear-gradient(100deg,rgba(34,211,238,.06),transparent); padding:16px 18px; margin-top:14px}
+  .learn h4{margin:0 0 6px; font-size:14px; color:var(--cyan)}
+  .learn p{margin:0; color:var(--muted); font-size:13.5px}
+
+  footer{margin-top:60px; padding-top:22px; border-top:1px solid var(--border); color:var(--faint); font-size:12.5px}
+
+  @media(max-width:760px){
+    .g2,.g3,.loop,.vs{grid-template-columns:1fr}
+    .vs .was{border-right:none;border-bottom:1px solid var(--border)}
+    header.hero{padding:44px 0 24px}
+    .phase{padding-left:58px}
+    .tl::before{left:20px} .node{left:6px}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hero">
+    <span class="eyebrow"><span class="dot"></span>Planner's Master Plan &nbsp;/&nbsp; ground truth verified from code</span>
+    <h1>SentioBot: from working demo to <span class="grad">production-grade, evaluated, deployed</span></h1>
+    <p class="sub">A sequenced plan that holds one discipline above all: <b style="color:var(--ink)">measure before you optimize, ship honesty before you ship features</b>. Every phase ends in something you can put on a resume and defend under scrutiny.</p>
+    <div class="metaline">
+      <span class="pill">Stack: <b>FastAPI + LangGraph + Next.js + Supabase</b></span>
+      <span class="pill">Retrieval: <b>ChromaDB hybrid</b></span>
+      <span class="pill">LLM: <b>Gemini 2.0 Flash</b></span>
+      <span class="pill">Recon date: <b>2026-07-17</b></span>
+    </div>
+  </header>
+
+  <!-- REALITY -->
+  <section id="reality">
+    <div class="sec-head"><span class="sec-num">01</span><h2>What this project actually is today</h2></div>
+    <p class="sec-lead">The seeded plan and the README describe an older single-file Streamlit app. The code on disk tells a very different, more advanced story. This is the corrected picture the whole plan is built on.</p>
+    <div class="grid g3">
+      <div class="card"><h3><span class="ico">&#9881;</span>Backend</h3><p>FastAPI service (v2.0.0) with JWT auth, SSE token streaming at <code>/chat/stream</code>, and a <b>LangGraph StateGraph</b> agent, not the old ReAct executor.</p></div>
+      <div class="card"><h3><span class="ico">&#128269;</span>Retrieval</h3><p>ChromaDB + BM25 ensemble (0.4 / 0.6), parent-document store, wrapped in a MultiQueryRetriever. Chroma is still live; pgvector is only a commented-out note.</p></div>
+      <div class="card"><h3><span class="ico">&#128421;</span>Frontend</h3><p>Next.js 14 + React + Tailwind. Real streaming chat, tool-call badges, sidebar, markdown, feedback buttons. Already sophisticated, not Streamlit.</p></div>
+      <div class="card"><h3><span class="ico">&#128451;</span>Data</h3><p>Supabase Postgres for users, orders, products, conversations, messages, analytics, tickets. It is the app DB, not the vector store.</p></div>
+      <div class="card"><h3><span class="ico">&#9889;</span>Cache</h3><p>Three tiers: in-process LRU, semantic cosine (0.92), optional Redis. Checked before the agent runs on every request.</p></div>
+      <div class="card"><h3><span class="ico">&#128230;</span>Deploy scaffold</h3><p>docker-compose (backend + frontend + redis), railway.toml, vercel.json. Present but not yet proven to boot (see defects).</p></div>
+    </div>
+
+    <div style="margin-top:16px" class="vs">
+      <div class="col was">
+        <h4>README / seed says</h4>
+        <ul>
+          <li>Single <b>Streamlit</b> app, <code>app.py</code> + <code>dashboard.py</code></li>
+          <li>LangChain <b>ReAct AgentExecutor</b>, Gemini <b>1.5</b> Flash</li>
+          <li><b>ChromaDB replaced by Supabase/pgvector?</b></li>
+          <li>Setup via conda + <code>pip freeze</code></li>
+          <li>Feedback logged to <code>analytics.log</code>, works</li>
+        </ul>
+      </div>
+      <div class="col is">
+        <h4>Code actually does</h4>
+        <ul>
+          <li>Two services: <b>FastAPI + Next.js</b>, no Streamlit anywhere</li>
+          <li><b>LangGraph</b> StateGraph, Gemini <b>2.0</b> Flash, temp 0.1</li>
+          <li>Chroma <b>stays</b>; Supabase is the app DB only</li>
+          <li>Pinned <code>backend/requirements.txt</code> already exists</li>
+          <li>Feedback UI renders but is <b>wired wrong and never posts</b></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- DEFECTS -->
+  <section id="defects">
+    <div class="sec-head"><span class="sec-num">02</span><h2>Defects found during recon</h2></div>
+    <p class="sec-lead">Read from source, not assumed. Severity drives when each gets fixed. The headline: the service most likely does not boot as configured, so that is fixed first, before any measurement.</p>
+    <div class="grid" style="gap:12px">
+      <div class="defect"><span class="sev P0">P0</span><div class="body"><h3>Boot integrity: the app likely does not start as configured</h3><p>Contradictory imports (<code>cache.py</code> uses <code>from config</code> while the rest use <code>backend.*</code>) plus a Dockerfile/railway <code>uvicorn main:app</code> that cannot resolve after the build flattens the folder. No single documented command boots it.</p></div></div>
+      <div class="defect"><span class="sev P0">P0</span><div class="body"><h3>Cross-user cache leakage (privacy)</h3><p>The cache ignores <code>user_id</code> by design, but answers embed the user's name, serial numbers and warranty state. Alice's personalized answer can be served to Bob at cosine &ge; 0.92.</p></div></div>
+      <div class="defect"><span class="sev P1">P1</span><div class="body"><h3>Agent tool path has no RAG context</h3><p>Keyword routing sends "warranty/order" questions to a graph whose prompt says "RAG first" but binds no lookup tool and injects no documents, contradicting "answer only from context".</p></div></div>
+      <div class="defect"><span class="sev P1">P1</span><div class="body"><h3>Feedback broken end to end</h3><p>The frontend never captures <code>X-Interaction-Id</code>, so <code>interactionId</code> is always undefined and thumbs up/down silently no-op. Analytics feedback stays near zero.</p></div></div>
+      <div class="defect"><span class="sev P1">P1</span><div class="body"><h3>Tool-path answer overwrite + empty sources</h3><p><code>full_answer = str(output)</code> clobbers streamed content with raw tool text, and tool turns always send <code>sources: []</code>. Persisted messages can be malformed.</p></div></div>
+      <div class="defect"><span class="sev P2">P2</span><div class="body"><h3>Frontend build config missing</h3><p>No <code>tailwind.config.js</code> / <code>postcss.config.js</code> / <code>tsconfig.json</code> in the listing, so a fresh <code>npm run build</code> likely ships unstyled or errors. Confirm, then fix.</p></div></div>
+      <div class="defect"><span class="sev P2">P2</span><div class="body"><h3>Insecure defaults + latency blind spots</h3><p>Hardcoded default <code>jwt_secret</code>, placeholder CORS origin, and only a total-ms logger: no TTFT, no retrieval timing, no p50/p95 on a streaming app.</p></div></div>
+    </div>
+  </section>
+
+  <!-- TIMELINE -->
+  <section id="plan">
+    <div class="sec-head"><span class="sec-num">03</span><h2>The phased roadmap</h2></div>
+    <p class="sec-lead">Eight phases, each with an explicit gate (what "done" means) and a resume artifact. Nothing shiny jumps the line: features are last, and no optimization starts before its baseline is committed.</p>
+
+    <div class="learn">
+      <h4>Why this order (the learning)</h4>
+      <p>An "improvement" with no frozen baseline is a story, not a result. You cannot claim "40% faster" or "faithfulness 0.9" unless a committed, reproducible before-number exists. So we make it run, freeze baselines for latency and quality, only then optimize and re-measure, then harden, then deploy, and rewrite the README last so it describes what truly exists.</p>
+    </div>
+
+    <div class="tl" style="margin-top:22px">
+      <div class="phase">
+        <div class="node">P0</div>
+        <div class="pcard">
+          <div class="top"><h3>Boot integrity + repo honesty</h3><span class="tag now">Active: Increment 1</span></div>
+          <p>One canonical run config that boots locally and in Docker. Fix the import scheme and the container command. No logic changes. Secrets scan. Trim the worst stale README lines.</p>
+          <div class="gate"><span class="k">GATE</span><span>Fresh clone installs, one command boots, <code>/health</code> is ok, and one real chat streams a token + done event, in the container too.</span></div>
+          <div class="artifact">Artifact: <b>clone, install, one command, it answers</b> + a clean secrets-scan line.</div>
+        </div>
+      </div>
+      <div class="phase">
+        <div class="node">P1</div>
+        <div class="pcard">
+          <div class="top"><h3>Baseline: latency</h3><span class="tag">measure</span></div>
+          <p>Instrument the current system with no changes: time-to-first-token, retrieval time (including the hidden multi-query LLM call), and end-to-end p50/p95, for both the RAG and tool paths. Drive it through the real endpoint.</p>
+          <div class="gate"><span class="k">GATE</span><span>TTFT + retrieval + e2e p50/p95 committed, stamped with commit/model/date, reproduced twice.</span></div>
+          <div class="artifact">Artifact: <b>a real latency table with methodology</b>.</div>
+        </div>
+      </div>
+      <div class="phase">
+        <div class="node">P2</div>
+        <div class="pcard">
+          <div class="top"><h3>Baseline: quality</h3><span class="tag">ratify + freeze</span></div>
+          <p>A ~50-item golden set (doc lookup, orders, warranty, tickets, multi-turn, must-refuse), ratified then frozen. Metrics pinned before results: hit-rate@k, context precision, RAGAS faithfulness + relevancy (2 runs for variance), tool-call correctness.</p>
+          <div class="gate"><span class="k">GATE</span><span>Baseline scores committed and reproduced twice; golden set frozen; every score carries its recipe.</span></div>
+          <div class="artifact">Artifact: <b>a reproducible quality number</b> to replace the deleted "70%" claim.</div>
+        </div>
+      </div>
+      <div class="phase">
+        <div class="node">P3</div>
+        <div class="pcard">
+          <div class="top"><h3>Measured optimization</h3><span class="tag">optimize</span></div>
+          <p>Only the ranked candidates below, each with its baseline already committed. Every change re-runs both baselines on the same frozen inputs; deltas reported honestly, including regressions.</p>
+          <div class="gate"><span class="k">GATE</span><span>Each change shows a measured delta on the frozen set; no candidate starts before its baseline exists.</span></div>
+          <div class="artifact">Artifact: <b>a before/after table</b> ("cut p95 TTFT 40%, faithfulness held within noise").</div>
+        </div>
+      </div>
+      <div class="phase">
+        <div class="node">P4</div>
+        <div class="pcard">
+          <div class="top"><h3>Service hardening</h3><span class="tag">defend</span></div>
+          <p>Fix the recon defects on the real path (cache leak, tool-path context, feedback, answer overwrite, secrets/CORS). Timeouts, retries with backoff, defined failure messages, cost guards, a real rate limiter, injection resistance.</p>
+          <div class="gate"><span class="k">GATE</span><span>The reviewer's hostile battery (100K input, injection, network kill, out-of-scope) cannot crash or leak.</span></div>
+          <div class="artifact">Artifact: <b>"hardened for production" that is demonstrable</b>.</div>
+        </div>
+      </div>
+      <div class="phase">
+        <div class="node">P5</div>
+        <div class="pcard">
+          <div class="top"><h3>Container + CI</h3><span class="tag">automate</span></div>
+          <p>Proper multi-stage Docker, ratified index strategy (bake vs mount). GitHub Actions: lint, unit tests, frontend build, and a free eval smoke. No unbounded paid LLM calls in CI, ever.</p>
+          <div class="gate"><span class="k">GATE</span><span><code>docker compose up</code> from scratch serves both services; CI is green.</span></div>
+          <div class="artifact">Artifact: <b>CI badge + "containerized, CI-gated"</b>.</div>
+        </div>
+      </div>
+      <div class="phase">
+        <div class="node">P6</div>
+        <div class="pcard">
+          <div class="top"><h3>Deploy + observability + honest README</h3><span class="tag">ship</span></div>
+          <p>Backend on Railway or Cloud Run (scale-to-zero), frontend on Vercel, secrets in the platform manager. Per-request tracing and cost-per-query. README rewritten last to match reality: diagram, eval + latency tables, live link, honest limitations.</p>
+          <div class="gate"><span class="k">GATE</span><span>A public URL answers a real question; every README claim is true of the code at that commit.</span></div>
+          <div class="artifact">Artifact: <b>a live demo link + a fully verifiable resume bullet</b>.</div>
+        </div>
+      </div>
+      <div class="phase feat">
+        <div class="node">P7</div>
+        <div class="pcard">
+          <div class="top"><h3>Net-new features</h3><span class="tag">grow</span></div>
+          <p>The full feature backlog, gated behind baselines + hardening. Each gets its own planner / builder / reviewer loop and is re-measured so it cannot regress P1/P2.</p>
+          <div class="gate"><span class="k">GATE</span><span>Each feature ships behind its own baseline; none regresses latency or quality.</span></div>
+          <div class="artifact" style="margin-top:12px">Backlog, roughly in order:</div>
+          <div class="grid g2" style="margin-top:8px">
+            <div class="card"><h3><span class="ico">&#128241;</span>Mobile + accessible UI</h3><p>Responsive drawer sidebar, a11y, keyboard nav, PWA. This is the "simple to sophisticated UI" ask, as polish, since it is already React.</p></div>
+            <div class="card"><h3><span class="ico">&#128278;</span>Citation highlighting</h3><p>Extract and show the exact supporting sentence in the sources panel.</p></div>
+            <div class="card"><h3><span class="ico">&#128172;</span>UX polish</h3><p>Stop / regenerate, copy button, skeleton states, smoother streaming.</p></div>
+            <div class="card"><h3><span class="ico">&#128202;</span>Admin dashboard</h3><p>Real analytics page, now that feedback actually writes.</p></div>
+            <div class="card"><h3><span class="ico">&#128193;</span>User knowledge bases</h3><p>Multi-document upload so users bring their own docs.</p></div>
+            <div class="card"><h3><span class="ico">&#128444;</span>Multimodal RAG</h3><p>Ingest diagrams/images from manuals via a vision model.</p></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CANDIDATES -->
+  <section id="candidates">
+    <div class="sec-head"><span class="sec-num">04</span><h2>Ranked optimization candidates</h2></div>
+    <p class="sec-lead">Brainstormed as a critic, not a cheerleader. Each states the expected win, the measurement that would prove it, the cost, and the risk. None is approved until its baseline is committed. Rank = build order inside P3.</p>
+    <div class="grid g2">
+
+      <div class="cand"><div class="rk"><span class="rank">1</span><h3>Cut or gate the MultiQueryRetriever</h3><span class="riskbadge r-med">med risk</span></div>
+        <div class="kv">
+          <span class="kk">Win</span><span class="vv">Biggest TTFT drop available; removes an LLM round-trip and halves per-query LLM cost.</span>
+          <span class="kk">Proof</span><span class="vv">P1 TTFT delta; P2 hit-rate@k + faithfulness must hold.</span>
+          <span class="kk">Cost</span><span class="vv">Engineering only; reduces recurring spend.</span>
+          <span class="kk">Risk</span><span class="vv">Multi-query may be lifting recall; keep only if quality holds.</span>
+        </div></div>
+
+      <div class="cand"><div class="rk"><span class="rank">2</span><h3>Fix, then exploit, the cache</h3><span class="riskbadge r-low">low risk</span></div>
+        <div class="kv">
+          <span class="kk">Win</span><span class="vv">Near-zero latency on repeats, safely, once scoped per user.</span>
+          <span class="kk">Proof</span><span class="vv">Hit-rate + TTFT-on-hit vs miss; reviewer confirms no leak.</span>
+          <span class="kk">Cost</span><span class="vv">Engineering only.</span>
+          <span class="kk">Risk</span><span class="vv">0.92 semantic threshold can over-fire; measure honestly.</span>
+        </div></div>
+
+      <div class="cand"><div class="rk"><span class="rank">3</span><h3>Model routing (small model for easy queries)</h3><span class="riskbadge r-med">med risk</span></div>
+        <div class="kv">
+          <span class="kk">Win</span><span class="vv">Lower latency + cost by reserving the strong model for tool reasoning.</span>
+          <span class="kk">Proof</span><span class="vv">Per-class TTFT + cost delta, quality held per class.</span>
+          <span class="kk">Cost</span><span class="vv">Engineering; net cost down.</span>
+          <span class="kk">Risk</span><span class="vv">Router must be cheap (not another LLM call) or the win vanishes.</span>
+        </div></div>
+
+      <div class="cand"><div class="rk"><span class="rank">4</span><h3>Unify retrieval into the tool path</h3><span class="riskbadge r-med">med risk</span></div>
+        <div class="kv">
+          <span class="kk">Win</span><span class="vv">Correctness (context on tool turns) + one honest eval path. Also fixes P1-3.</span>
+          <span class="kk">Proof</span><span class="vv">P2 quality on tool-routed questions rises; tool-path TTFT measured.</span>
+          <span class="kk">Cost</span><span class="vv">Engineering.</span>
+          <span class="kk">Risk</span><span class="vv">Adds retrieval latency to tool turns; overlaps P4, sequence care.</span>
+        </div></div>
+
+      <div class="cand"><div class="rk"><span class="rank">5</span><h3>Warm singletons + share the embedder</h3><span class="riskbadge r-low">low risk</span></div>
+        <div class="kv">
+          <span class="kk">Win</span><span class="vv">Kills first-request cold start; drops a duplicate MiniLM instance.</span>
+          <span class="kk">Proof</span><span class="vv">First-request TTFT and steady-state RSS before/after.</span>
+          <span class="kk">Cost</span><span class="vv">Small engineering.</span>
+          <span class="kk">Risk</span><span class="vv">Slower boot, more idle RAM; watch on scale-to-zero.</span>
+        </div></div>
+
+      <div class="cand"><div class="rk"><span class="rank">6</span><h3>Index / chunking design pass</h3><span class="riskbadge r-high">high risk</span></div>
+        <div class="kv">
+          <span class="kk">Win</span><span class="vv">Better hit-rate@k and/or a smaller, faster index.</span>
+          <span class="kk">Proof</span><span class="vv">P2 retrieval metrics + index size/retrieve time.</span>
+          <span class="kk">Cost</span><span class="vv">Engineering + one reingest.</span>
+          <span class="kk">Risk</span><span class="vv">Tuning against the golden set is leakage; needs a held-out split first.</span>
+        </div></div>
+
+      <div class="cand"><div class="rk"><span class="rank">7</span><h3>Ensemble weight sweep</h3><span class="riskbadge r-low">low risk</span></div>
+        <div class="kv">
+          <span class="kk">Win</span><span class="vv">Modest hit-rate gain over the current 0.4 / 0.6.</span>
+          <span class="kk">Proof</span><span class="vv">Retrieval metrics across a small grid on a held-out split.</span>
+          <span class="kk">Cost</span><span class="vv">Cheap and deterministic, no LLM judge.</span>
+          <span class="kk">Risk</span><span class="vv">Leakage if fit on the eval set; low technical risk.</span>
+        </div></div>
+
+      <div class="cand def"><div class="rk"><span class="rank">P7</span><h3>pgvector migration</h3><span class="riskbadge r-high">high effort</span></div>
+        <div class="kv">
+          <span class="kk">Win</span><span class="vv">One datastore, simpler deploy, maybe faster at scale.</span>
+          <span class="kk">Proof</span><span class="vv">Quality parity on the frozen set + retrieve-time at this corpus.</span>
+          <span class="kk">Cost</span><span class="vv">Engineering, possibly Supabase compute.</span>
+          <span class="kk">Risk</span><span class="vv">Unclear win at 85 docs. A feature-grade migration, not an optimization.</span>
+        </div></div>
+
+    </div>
+  </section>
+
+  <!-- LOOP -->
+  <section id="loop">
+    <div class="sec-head"><span class="sec-num">05</span><h2>How each increment gets built</h2></div>
+    <p class="sec-lead">Three separate Claude sessions, one relay loop. The planner never edits code; the reviewer never shares the builder's context. That separation is the point: it is what catches the leaked secret, the unreproducible number, the defect the builder rationalized.</p>
+    <div class="loop">
+      <div class="role plan"><h3>&#129513; Planner</h3><span class="badge">Cowork, read-only</span><p>Reads the repo, ratifies findings, ranks candidates, writes the spec + gate into STATUS-prod.md. Holds the line on order and evidence. (This document.)</p></div>
+      <div class="role build"><h3>&#128296; Builder</h3><span class="badge">Claude Code</span><p>Inspects the real code, builds one increment to the ratified spec, verifies against the gate, commits. Asks before every push, never commits secrets.</p></div>
+      <div class="role rev"><h3>&#128269; Reviewer</h3><span class="badge">fresh Claude Code</span><p>Trusts nothing. Re-runs the tests, the eval, the secrets scan itself. Tries to break the change. Writes a verdict; P0/P1 findings go back before the next increment.</p></div>
+    </div>
+    <div class="learn"><h4>The cadence, every increment</h4><p>Inspect the substrate &rarr; planner ratifies and writes the kickoff &rarr; builder builds and verifies the gate &rarr; reviewer tears it apart &rarr; log commits and move to the next. The frozen golden set and the committed baselines are what make every later claim defensible.</p></div>
+  </section>
+
+  <footer>
+    SentioBot production-grade workstream &nbsp;&middot;&nbsp; planner recon 2026-07-17 &nbsp;&middot;&nbsp; source of truth: STATUS-prod.md in the repo. This roadmap mirrors that file; the file is authoritative.
+  </footer>
+
+</div>
+</body>
+</html>

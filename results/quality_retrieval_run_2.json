@@ -1,0 +1,734 @@
+{
+  "run_label": "2",
+  "metric": "retrieval on BASE ENSEMBLE (bm25 0.4 + vector 0.6, k=5); zero Groq tokens; bit-stable",
+  "n_items": 23,
+  "hit_rate_at_1": 0.5217,
+  "hit_rate_at_3": 0.7826,
+  "hit_rate_at_5": 0.913,
+  "mrr": 0.6659,
+  "context_precision_at_5": 0.2261,
+  "per_category_hit_at_5": {
+    "doc_lookup": "13/15",
+    "policy_lookup": "8/8"
+  },
+  "misses_at_5": [
+    "doc-01",
+    "doc-13"
+  ],
+  "commit": "b34a8a91dc07f57d760bdc1512966fb845be70d8",
+  "rows": [
+    {
+      "id": "doc-01",
+      "category": "doc_lookup",
+      "hit_at_1": false,
+      "hit_at_3": false,
+      "hit_at_5": false,
+      "first_hit_rank": null,
+      "precision_at_5": 0.0,
+      "top5": [
+        {
+          "source": "faqs.csv",
+          "section": null
+        },
+        {
+          "source": "lumiglow_smart_lighting_manual.md",
+          "section": "6. In-Depth Troubleshooting"
+        },
+        {
+          "source": "lumiglow_smart_lighting_manual.md",
+          "section": "Nexora LumiGlow Smart Light – User Manual"
+        },
+        {
+          "source": "lumiglow_smart_lighting_manual.md",
+          "section": "7. Technical Specifications"
+        },
+        {
+          "source": "lumiglow_smart_lighting_manual.md",
+          "section": "1. Introduction"
+        }
+      ]
+    },
+    {
+      "id": "doc-02",
+      "category": "doc_lookup",
+      "hit_at_1": true,
+      "hit_at_3": true,
+      "hit_at_5": true,
+      "first_hit_rank": 1,
+      "precision_at_5": 0.2,
+      "top5": [
+        {
+          "source": "faqs.csv",
+          "section": null
+        },
+        {
+          "source": "faqs.csv",
+          "section": null
+        },
+        {
+          "source": "faqs.csv",
+          "section": null
+        },
+        {
+          "source": "lumiglow_smart_lighting_manual.md",
+          "section": "4. Installation & Initial Setup"
+        },
+        {
+          "source": "lumiglow_smart_lighting_manual.md",
+          "section": "Nexora LumiGlow Smart Light – User Manual"
+        }
+      ]
+    },
+    {
+      "id": "doc-03",
+      "category": "doc_lookup",
+      "hit_at_1": true,
+      "hit_at_3": true,
+      "hit_at_5": true,
+      "first_hit_rank": 1,
+      "precision_at_5": 0.2,
+      "top5": [
+        {
+          "source": "lumiglow_smart_lighting_manual.md",
+          "section": "7. Technical Specifications"
+        },
+        {
+          "source": "lumiglow_smart_lighting_manual.md",
+          "section": "2. What's in the Box"
+        },
+        {
+          "source": "policies.md",
+          "section": "1. Limited Warranty Policy"
+        },
+        {
+          "source": "lumiglow_smart_lighting_manual.md",
+          "section": "1. Introduction"
+        },
+        {
+          "source": "lumiglow_smart_lighting_manual.md",
+          "section": "Nexora LumiGlow Smart Light – User Manual"
+        }
+      ]
+    },
+    {
+      "id": "doc-04",
+      "category": "doc_lookup",
+      "hit_at_1": true,
+      "hit_at_3": true,
+      "hit_at_5": true,
+      "first_hit_rank": 1,
+      "precision_at_5": 0.4,
+      "top5": [
+        {
+          "source": "lumiglow_smart_lighting_manual.md",
+          "section": "3. Safety & Compliance"
+        },
+        {
+          "source": "faqs.csv",
+          "section": null
+        },
+        {
+          "source": "lumiglow_smart_lighting_manual.md",
+          "section": "Nexora LumiGlow Smart Light – User Manual"
+        },
+        {
+          "source": "lumiglow_smart_lighting_manual.md",
+          "section": "1. Introduction"
+        },
+        {
+          "source": "lumiglow_smart_lighting_manual.md",
+          "section": "5. Advanced Features"
+        }
+      ]
+    },
+    {
+      "id": "doc-05",
+      "category": "doc_lookup",
+      "hit_at_1": true,
+      "hit_at_3": true,
+      "hit_at_5": true,
+      "first_hit_rank": 1,
+      "precision_at_5": 0.2,
+      "top5": [
+        {
+          "source": "faqs.csv",
+          "section": null
+        },
+        {
+          "source": "lumiglow_smart_lighting_manual.md",
+          "section": "1. Introduction"
+        },
+        {
+          "source": "lumiglow_smart_lighting_manual.md",
+          "section": "Nexora LumiGlow Smart Light – User Manual"
+        },
+        {
+          "source": "lumiglow_smart_lighting_manual.md",
+          "section": "4. Installation & Initial Setup"
+        },
+        {
+          "source": "lumiglow_smart_lighting_manual.md",
+          "section": "2. What's in the Box"
+        }
+      ]
+    },
+    {
+      "id": "doc-06",
+      "category": "doc_lookup",
+      "hit_at_1": false,
+      "hit_at_3": true,
+      "hit_at_5": true,
+      "first_hit_rank": 2,
+      "precision_at_5": 0.2,
+      "top5": [
+        {
+          "source": "faqs.csv",
+          "section": null
+        },
+        {
+          "source": "nexora_thermostat_pro_manual.md",
+          "section": "3. Safety & Compliance"
+        },
+        {
+          "source": "nexora_thermostat_pro_manual.md",
+          "section": "4. Installation Guide"
+        },
+        {
+          "source": "faqs.csv",
+          "section": null
+        },
+        {
+          "source": "faqs.csv",
+          "section": null
+        }
+      ]
+    },
+    {
+      "id": "doc-07",
+      "category": "doc_lookup",
+      "hit_at_1": false,
+      "hit_at_3": true,
+      "hit_at_5": true,
+      "first_hit_rank": 3,
+      "precision_at_5": 0.2,
+      "top5": [
+        {
+          "source": "faqs.csv",
+          "section": null
+        },
+        {
+          "source": "nexora_thermostat_pro_manual.md",
+          "section": "4. Installation Guide"
+        },
+        {
+          "source": "faqs.csv",
+          "section": null
+        },
+        {
+          "source": "faqs.csv",
+          "section": null
+        },
+        {
+          "source": "nexora_thermostat_pro_manual.md",
+          "section": "Nexora Thermostat Pro – User Manual"
+        }
+      ]
+    },
+    {
+      "id": "doc-08",
+      "category": "doc_lookup",
+      "hit_at_1": true,
+      "hit_at_3": true,
+      "hit_at_5": true,
+      "first_hit_rank": 1,
+      "precision_at_5": 0.2,
+      "top5": [
+        {
+          "source": "faqs.csv",
+          "section": null
+        },
+        {
+          "source": "faqs.csv",
+          "section": null
+        },
+        {
+          "source": "faqs.csv",
+          "section": null
+        },
+        {
+          "source": "nexora_thermostat_pro_manual.md",
+          "section": "4. Installation Guide"
+        },
+        {
+          "source": "nexora_thermostat_pro_manual.md",
+          "section": "Nexora Thermostat Pro – User Manual"
+        }
+      ]
+    },
+    {
+      "id": "doc-09",
+      "category": "doc_lookup",
+      "hit_at_1": false,
+      "hit_at_3": false,
+      "hit_at_5": true,
+      "first_hit_rank": 4,
+      "precision_at_5": 0.2,
+      "top5": [
+        {
+          "source": "faqs.csv",
+          "section": null
+        },
+        {
+          "source": "nexora_thermostat_pro_manual.md",
+          "section": "Nexora Thermostat Pro – User Manual"
+        },
+        {
+          "source": "faqs.csv",
+          "section": null
+        },
+        {
+          "source": "nexora_thermostat_pro_manual.md",
+          "section": "8. Technical Specifications"
+        },
+        {
+          "source": "nexora_thermostat_pro_manual.md",
+          "section": "1. Introduction"
+        }
+      ]
+    },
+    {
+      "id": "doc-10",
+      "category": "doc_lookup",
+      "hit_at_1": false,
+      "hit_at_3": true,
+      "hit_at_5": true,
+      "first_hit_rank": 3,
+      "precision_at_5": 0.2,
+      "top5": [
+        {
+          "source": "faqs.csv",
+          "section": null
+        },
+        {
+          "source": "faqs.csv",
+          "section": null
+        },
+        {
+          "source": "nexora_thermostat_pro_manual.md",
+          "section": "6. Advanced Features"
+        },
+        {
+          "source": "nexora_thermostat_pro_manual.md",
+          "section": "1. Introduction"
+        },
+        {
+          "source": "nexora_thermostat_pro_manual.md",
+          "section": "Nexora Thermostat Pro – User Manual"
+        }
+      ]
+    },
+    {
+      "id": "doc-11",
+      "category": "doc_lookup",
+      "hit_at_1": true,
+      "hit_at_3": true,
+      "hit_at_5": true,
+      "first_hit_rank": 1,
+      "precision_at_5": 0.2,
+      "top5": [
+        {
+          "source": "visionsphere_360_manual.md",
+          "section": "3. Safety, Placement & Privacy"
+        },
+        {
+          "source": "faqs.csv",
+          "section": null
+        },
+        {
+          "source": "faqs.csv",
+          "section": null
+        },
+        {
+          "source": "visionsphere_360_manual.md",
+          "section": "1. Introduction"
+        },
+        {
+          "source": "visionsphere_360_manual.md",
+          "section": "Nexora SecureSphere 360 Camera – User Manual"
+        }
+      ]
+    },
+    {
+      "id": "doc-12",
+      "category": "doc_lookup",
+      "hit_at_1": false,
+      "hit_at_3": false,
+      "hit_at_5": true,
+      "first_hit_rank": 5,
+      "precision_at_5": 0.2,
+      "top5": [
+        {
+          "source": "faqs.csv",
+          "section": null
+        },
+        {
+          "source": "faqs.csv",
+          "section": null
+        },
+        {
+          "source": "visionsphere_360_manual.md",
+          "section": "Nexora SecureSphere 360 Camera – User Manual"
+        },
+        {
+          "source": "visionsphere_360_manual.md",
+          "section": "1. Introduction"
+        },
+        {
+          "source": "visionsphere_360_manual.md",
+          "section": "3. Safety, Placement & Privacy"
+        }
+      ]
+    },
+    {
+      "id": "doc-13",
+      "category": "doc_lookup",
+      "hit_at_1": false,
+      "hit_at_3": false,
+      "hit_at_5": false,
+      "first_hit_rank": null,
+      "precision_at_5": 0.0,
+      "top5": [
+        {
+          "source": "visionsphere_360_manual.md",
+          "section": "4. Installation & Initial Setup"
+        },
+        {
+          "source": "faqs.csv",
+          "section": null
+        },
+        {
+          "source": "faqs.csv",
+          "section": null
+        },
+        {
+          "source": "faqs.csv",
+          "section": null
+        },
+        {
+          "source": "faqs.csv",
+          "section": null
+        }
+      ]
+    },
+    {
+      "id": "doc-14",
+      "category": "doc_lookup",
+      "hit_at_1": true,
+      "hit_at_3": true,
+      "hit_at_5": true,
+      "first_hit_rank": 1,
+      "precision_at_5": 0.2,
+      "top5": [
+        {
+          "source": "visionsphere_360_manual.md",
+          "section": "7. Technical Specifications"
+        },
+        {
+          "source": "visionsphere_360_manual.md",
+          "section": "Nexora SecureSphere 360 Camera – User Manual"
+        },
+        {
+          "source": "visionsphere_360_manual.md",
+          "section": "1. Introduction"
+        },
+        {
+          "source": "faqs.csv",
+          "section": null
+        },
+        {
+          "source": "faqs.csv",
+          "section": null
+        }
+      ]
+    },
+    {
+      "id": "doc-15",
+      "category": "doc_lookup",
+      "hit_at_1": false,
+      "hit_at_3": false,
+      "hit_at_5": true,
+      "first_hit_rank": 5,
+      "precision_at_5": 0.2,
+      "top5": [
+        {
+          "source": "faqs.csv",
+          "section": null
+        },
+        {
+          "source": "faqs.csv",
+          "section": null
+        },
+        {
+          "source": "visionsphere_360_manual.md",
+          "section": "Nexora SecureSphere 360 Camera – User Manual"
+        },
+        {
+          "source": "visionsphere_360_manual.md",
+          "section": "1. Introduction"
+        },
+        {
+          "source": "visionsphere_360_manual.md",
+          "section": "5. Advanced Features"
+        }
+      ]
+    },
+    {
+      "id": "pol-01",
+      "category": "policy_lookup",
+      "hit_at_1": true,
+      "hit_at_3": true,
+      "hit_at_5": true,
+      "first_hit_rank": 1,
+      "precision_at_5": 0.4,
+      "top5": [
+        {
+          "source": "faqs.csv",
+          "section": null
+        },
+        {
+          "source": "policies.md",
+          "section": "1. Limited Warranty Policy"
+        },
+        {
+          "source": "lumiglow_smart_lighting_manual.md",
+          "section": "2. What's in the Box"
+        },
+        {
+          "source": "policies.md",
+          "section": "Nexora Electronics – Official Customer Policies"
+        },
+        {
+          "source": "lumiglow_smart_lighting_manual.md",
+          "section": "8. Warranty & Support"
+        }
+      ]
+    },
+    {
+      "id": "pol-02",
+      "category": "policy_lookup",
+      "hit_at_1": true,
+      "hit_at_3": true,
+      "hit_at_5": true,
+      "first_hit_rank": 1,
+      "precision_at_5": 0.4,
+      "top5": [
+        {
+          "source": "faqs.csv",
+          "section": null
+        },
+        {
+          "source": "faqs.csv",
+          "section": null
+        },
+        {
+          "source": "visionsphere_360_manual.md",
+          "section": "8. Warranty & Support"
+        },
+        {
+          "source": "policies.md",
+          "section": "1. Limited Warranty Policy"
+        },
+        {
+          "source": "faqs.csv",
+          "section": null
+        }
+      ]
+    },
+    {
+      "id": "pol-03",
+      "category": "policy_lookup",
+      "hit_at_1": true,
+      "hit_at_3": true,
+      "hit_at_5": true,
+      "first_hit_rank": 1,
+      "precision_at_5": 0.4,
+      "top5": [
+        {
+          "source": "faqs.csv",
+          "section": null
+        },
+        {
+          "source": "policies.md",
+          "section": "2. Returns, Replacements & Refunds Policy"
+        },
+        {
+          "source": "nexora_thermostat_pro_manual.md",
+          "section": "9. Warranty & Support"
+        },
+        {
+          "source": "lumiglow_smart_lighting_manual.md",
+          "section": "8. Warranty & Support"
+        },
+        {
+          "source": "faqs.csv",
+          "section": null
+        }
+      ]
+    },
+    {
+      "id": "pol-04",
+      "category": "policy_lookup",
+      "hit_at_1": true,
+      "hit_at_3": true,
+      "hit_at_5": true,
+      "first_hit_rank": 1,
+      "precision_at_5": 0.4,
+      "top5": [
+        {
+          "source": "faqs.csv",
+          "section": null
+        },
+        {
+          "source": "policies.md",
+          "section": "2. Returns, Replacements & Refunds Policy"
+        },
+        {
+          "source": "faqs.csv",
+          "section": null
+        },
+        {
+          "source": "policies.md",
+          "section": "6. Customer Support Policy"
+        },
+        {
+          "source": "policies.md",
+          "section": "5. End-of-Life (EOL) Policy"
+        }
+      ]
+    },
+    {
+      "id": "pol-05",
+      "category": "policy_lookup",
+      "hit_at_1": false,
+      "hit_at_3": true,
+      "hit_at_5": true,
+      "first_hit_rank": 2,
+      "precision_at_5": 0.2,
+      "top5": [
+        {
+          "source": "faqs.csv",
+          "section": null
+        },
+        {
+          "source": "policies.md",
+          "section": "3. Privacy Policy"
+        },
+        {
+          "source": "faqs.csv",
+          "section": null
+        },
+        {
+          "source": "faqs.csv",
+          "section": null
+        },
+        {
+          "source": "faqs.csv",
+          "section": null
+        }
+      ]
+    },
+    {
+      "id": "pol-06",
+      "category": "policy_lookup",
+      "hit_at_1": false,
+      "hit_at_3": true,
+      "hit_at_5": true,
+      "first_hit_rank": 2,
+      "precision_at_5": 0.2,
+      "top5": [
+        {
+          "source": "faqs.csv",
+          "section": null
+        },
+        {
+          "source": "policies.md",
+          "section": "3. Privacy Policy"
+        },
+        {
+          "source": "faqs.csv",
+          "section": null
+        },
+        {
+          "source": "faqs.csv",
+          "section": null
+        },
+        {
+          "source": "policies.md",
+          "section": "4. App, Cloud & Connectivity Policy"
+        }
+      ]
+    },
+    {
+      "id": "pol-07",
+      "category": "policy_lookup",
+      "hit_at_1": true,
+      "hit_at_3": true,
+      "hit_at_5": true,
+      "first_hit_rank": 1,
+      "precision_at_5": 0.2,
+      "top5": [
+        {
+          "source": "policies.md",
+          "section": "5. End-of-Life (EOL) Policy"
+        },
+        {
+          "source": "policies.md",
+          "section": "Nexora Electronics – Official Customer Policies"
+        },
+        {
+          "source": "nexora_thermostat_pro_manual.md",
+          "section": "9. Warranty & Support"
+        },
+        {
+          "source": "policies.md",
+          "section": "1. Limited Warranty Policy"
+        },
+        {
+          "source": "policies.md",
+          "section": "2. Returns, Replacements & Refunds Policy"
+        }
+      ]
+    },
+    {
+      "id": "pol-08",
+      "category": "policy_lookup",
+      "hit_at_1": false,
+      "hit_at_3": true,
+      "hit_at_5": true,
+      "first_hit_rank": 2,
+      "precision_at_5": 0.2,
+      "top5": [
+        {
+          "source": "policies.md",
+          "section": "2. Returns, Replacements & Refunds Policy"
+        },
+        {
+          "source": "policies.md",
+          "section": "6. Customer Support Policy"
+        },
+        {
+          "source": "nexora_thermostat_pro_manual.md",
+          "section": "9. Warranty & Support"
+        },
+        {
+          "source": "policies.md",
+          "section": "5. End-of-Life (EOL) Policy"
+        },
+        {
+          "source": "policies.md",
+          "section": "1. Limited Warranty Policy"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+# Build context is ./backend. Keep secrets, envs, and caches OUT of the image,
+# but KEEP the RAG index (vector_db / parent_docstore / parents.pkl) so it is
+# BAKED into the image (Increment 8: self-contained, no persistent volume needed
+# on scale-to-zero targets).
+
+# Secrets - never bake .env into an image layer
+.env
+.env.*
+
+# Virtualenvs
+venv/
+venv
+nexora_env/
+env/
+
+# Python caches / test artifacts
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# Ingest-time only, not used at serve time
+summaries/
+ingest_manifest.json
+
+# Local eval outputs and logs (not needed in the serving image)
+results/
+*.log
+
+# VCS
+.git/

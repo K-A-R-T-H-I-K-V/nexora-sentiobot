@@ -1,0 +1,38 @@
+# Render Blueprint - deploys the backend as a free Docker web service.
+# In Render: New -> Blueprint -> connect this repo. Render reads this file.
+# Secrets (sync:false) are entered ONCE in the Render dashboard and persist
+# across deploys; they are never committed here.
+services:
+  - type: web
+    name: sentiobot-backend
+    runtime: docker
+    plan: free                      # 512MB - fits since embeddings run on ONNX, not torch
+    region: singapore               # closest free region to India
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /health
+    autoDeploy: false
+    envVars:
+      - key: LLM_PROVIDER
+        value: groq
+      - key: USE_MULTIQUERY
+        value: "false"
+      - key: DEBUG
+        value: "false"
+      - key: REDIS_URL
+        value: ""
+      - key: WEB_CONCURRENCY
+        value: "1"
+      # Non-secret; set your Supabase project URL here or in the dashboard.
+      - key: SUPABASE_URL
+        sync: false
+      # Secrets - set these in the Render dashboard (Environment), never in git.
+      - key: GROQ_API_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      # Set to the Vercel frontend URL after the frontend is deployed (CORS).
+      - key: ALLOWED_ORIGINS
+        sync: false

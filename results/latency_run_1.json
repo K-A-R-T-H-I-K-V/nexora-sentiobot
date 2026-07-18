@@ -1,0 +1,214 @@
+{
+  "run_label": "1",
+  "stamp": {
+    "provider": "groq",
+    "model": "llama-3.3-70b-versatile",
+    "temperature": 0.0,
+    "max_tokens": 2048,
+    "commit": "eb5df80e08397337523275acb3d8eda2b22675cc",
+    "date_utc": "2026-07-17T17:14:53.776225+00:00",
+    "hardware": "Windows 10 | AMD64 | py3.11.9",
+    "note": "TTFT/e2e are client-side over localhost; counts+tokens are server-side (trailing metrics event)."
+  },
+  "first_request_cold_start_ttft_ms": 21765.1,
+  "cache_contamination": [],
+  "rag_cold": {
+    "n": 3,
+    "ttft_ms_p50": 8599.2,
+    "ttft_ms_p95": 12921.0,
+    "e2e_ms_p50": 9503.7,
+    "e2e_ms_p95": 13711.9,
+    "retrieval_ms_p50": 641.6,
+    "llm_calls": 2,
+    "embedding_ops": 7,
+    "supabase_calls": 5,
+    "tokens_total_p50": 2499.0,
+    "tokens_total_max": 3179,
+    "prompt_tokens_p50": 2256.0,
+    "completion_tokens_p50": 360.0
+  },
+  "tool_cold": {
+    "n": 3,
+    "ttft_ms_p50": 11255.2,
+    "ttft_ms_p95": 25756.2,
+    "e2e_ms_p50": 11689.1,
+    "e2e_ms_p95": 26209.9,
+    "retrieval_ms_p50": 0.0,
+    "llm_calls": [
+      2,
+      3
+    ],
+    "embedding_ops": 2,
+    "supabase_calls": [
+      6,
+      7
+    ],
+    "tokens_total_p50": 2255.0,
+    "tokens_total_max": 3594,
+    "prompt_tokens_p50": 2182.0,
+    "completion_tokens_p50": 74.0
+  },
+  "cache_warm": {
+    "n": 2,
+    "all_were_cache_hits": true,
+    "ttft_ms_p50": 1391.1,
+    "e2e_ms_p50": 1391.2,
+    "supabase_calls": [
+      4
+    ]
+  },
+  "raw": {
+    "rag_cold": [
+      {
+        "ttft_ms": 4091.9912999961525,
+        "e2e_ms": 5218.14660000382,
+        "answer_len": 1337,
+        "errored": false,
+        "metrics": {
+          "route": "rag",
+          "cache_hit": false,
+          "llm_calls": 2,
+          "embedding_ops": 7,
+          "supabase_calls": 5,
+          "prompt_tokens": 2819,
+          "completion_tokens": 360,
+          "retrieval_ms": 543.8569000107236
+        },
+        "route": "rag",
+        "query": "How do I install the LumiGlow smart light bulb?"
+      },
+      {
+        "ttft_ms": 8599.22200004803,
+        "e2e_ms": 9503.706500050612,
+        "answer_len": 1223,
+        "errored": false,
+        "metrics": {
+          "route": "rag",
+          "cache_hit": false,
+          "llm_calls": 2,
+          "embedding_ops": 7,
+          "supabase_calls": 5,
+          "prompt_tokens": 1700,
+          "completion_tokens": 368,
+          "retrieval_ms": 641.5647999965586
+        },
+        "route": "rag",
+        "query": "How do I pair the VisionSphere 360 camera with the app?"
+      },
+      {
+        "ttft_ms": 13401.149400044233,
+        "e2e_ms": 14179.514800023753,
+        "answer_len": 800,
+        "errored": false,
+        "metrics": {
+          "route": "rag",
+          "cache_hit": false,
+          "llm_calls": 2,
+          "embedding_ops": 7,
+          "supabase_calls": 5,
+          "prompt_tokens": 2256,
+          "completion_tokens": 243,
+          "retrieval_ms": 1799.9873000080697
+        },
+        "route": "rag",
+        "query": "How do I mount the Nexora Thermostat Pro on the wall?"
+      }
+    ],
+    "tool_cold": [
+      {
+        "ttft_ms": 11255.240799975581,
+        "e2e_ms": 11689.097099995706,
+        "answer_len": 205,
+        "errored": false,
+        "metrics": {
+          "route": "tool",
+          "cache_hit": false,
+          "llm_calls": 2,
+          "embedding_ops": 2,
+          "supabase_calls": 6,
+          "prompt_tokens": 2181,
+          "completion_tokens": 74,
+          "retrieval_ms": 0.0
+        },
+        "route": "tool",
+        "query": "What is the status of order NX-2025-301?"
+      },
+      {
+        "ttft_ms": 27367.420200025663,
+        "e2e_ms": 27823.32610001322,
+        "answer_len": 283,
+        "errored": false,
+        "metrics": {
+          "route": "tool",
+          "cache_hit": false,
+          "llm_calls": 3,
+          "embedding_ops": 2,
+          "supabase_calls": 7,
+          "prompt_tokens": 3470,
+          "completion_tokens": 124,
+          "retrieval_ms": 0.0
+        },
+        "route": "tool",
+        "query": "Is my Nexora Thermostat Pro still under warranty?"
+      },
+      {
+        "ttft_ms": 10608.727400016505,
+        "e2e_ms": 10935.008800006472,
+        "answer_len": 130,
+        "errored": false,
+        "metrics": {
+          "route": "tool",
+          "cache_hit": false,
+          "llm_calls": 2,
+          "embedding_ops": 2,
+          "supabase_calls": 6,
+          "prompt_tokens": 2182,
+          "completion_tokens": 56,
+          "retrieval_ms": 0.0
+        },
+        "route": "tool",
+        "query": "I want to speak to a human agent about an unresolved issue."
+      }
+    ],
+    "warm": [
+      {
+        "ttft_ms": 1377.9026999836788,
+        "e2e_ms": 1377.9900999506935,
+        "answer_len": 1337,
+        "errored": false,
+        "metrics": {
+          "route": "cache",
+          "cache_hit": true,
+          "llm_calls": 0,
+          "embedding_ops": 0,
+          "supabase_calls": 4,
+          "prompt_tokens": 0,
+          "completion_tokens": 0,
+          "retrieval_ms": 0.0
+        },
+        "route": "rag",
+        "query": "How do I install the LumiGlow smart light bulb?",
+        "was_cache_hit": true
+      },
+      {
+        "ttft_ms": 1404.37970001949,
+        "e2e_ms": 1404.4310000026599,
+        "answer_len": 205,
+        "errored": false,
+        "metrics": {
+          "route": "cache",
+          "cache_hit": true,
+          "llm_calls": 0,
+          "embedding_ops": 0,
+          "supabase_calls": 4,
+          "prompt_tokens": 0,
+          "completion_tokens": 0,
+          "retrieval_ms": 0.0
+        },
+        "route": "tool",
+        "query": "What is the status of order NX-2025-301?",
+        "was_cache_hit": true
+      }
+    ]
+  }
+}

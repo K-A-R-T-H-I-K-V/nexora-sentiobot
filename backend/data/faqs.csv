@@ -1,0 +1,51 @@
+Question,Answer,Category
+How do I reset my Thermostat Pro?,"Press and hold the reset button for 10 seconds until the screen blinks, then release.",Thermostat
+What is the warranty period for the Thermostat Pro?,The Thermostat Pro comes with a 2-year limited warranty.,Warranty
+Can I control my Thermostat Pro remotely?,"Yes, using the Nexora mobile app available on iOS and Android.",Thermostat
+Why is my Thermostat Pro not connecting to WiFi?,Ensure your WiFi is 2.4GHz and the device is within range. Try resetting your router.,Connectivity
+How do I update the firmware on my Thermostat Pro?,Go to the Nexora app > Settings > Device > Update Firmware.,Thermostat
+Can I use voice assistants with the Thermostat Pro?,"Yes, it supports Alexa, Google Assistant, and Siri.",Integration
+Does the Thermostat Pro support multiple users?,"Yes, you can share access with up to 10 household members.",Thermostat
+How do I set a schedule on my Thermostat Pro?,"Open the Nexora app, navigate to 'Schedules,' and configure preferred timings.",Thermostat
+Why is my Thermostat Pro screen blank?,"Check if it’s properly powered. If not, ensure your wiring is correct or contact support.",Troubleshooting
+Can I control humidity with the Thermostat Pro?,"Yes, it supports temperature and humidity controls when connected to compatible HVAC systems.",Thermostat
+How do I install the SecureSphere 360 Camera?,Mount it on a wall/ceiling and follow the step-by-step app guide to complete setup.,Camera
+Why is my camera not recording?,Ensure you inserted a microSD card or enabled cloud recording in the Nexora app and check storage status.,Camera
+How do I enable night vision on my camera?,Night vision is automatic; toggle 'Night Mode' in Settings if you want to force it.,Camera
+Can I connect my camera to multiple devices?,"Yes, you can link up to 5 devices via the Nexora app with shared access permissions.",Camera
+Why is my camera not connecting to WiFi?,"Ensure you are on a 2.4GHz network, the camera is near the router, and that your password is correct.",Connectivity
+Does the camera support motion alerts?,"Yes, it sends instant motion alerts to your phone and allows custom sensitivity settings.",Camera
+How do I reset my SecureSphere 360 Camera?,"Hold the reset button for 8 seconds until the LED indicator flashes, then reconfigure in the app.",Camera
+Can I disable the camera microphone?,"Yes, toggle microphone access in Settings > Privacy or physically mute in the app.",Privacy
+Does the camera store videos offline?,"Yes, via microSD card storage (up to 128GB) and optional encrypted local storage.",Camera
+Can I view live feeds remotely?,"Yes, via the Nexora app with secure end-to-end encrypted streaming.",Camera
+How do I set up the Nexora Smart Lights?,"Screw in the bulb, power it on, and connect through the Nexora app following the onboarding flow.",Lighting
+Why are my smart lights flickering?,"Ensure a stable WiFi connection, check the bulb is properly seated, and update firmware.",Troubleshooting
+Can I change light colors?,"Yes, choose from millions of colors and presets in the Nexora app under 'Colors & Scenes'.",Lighting
+Do smart lights support dimming?,"Yes, you can adjust brightness from 1% to 100% in the app or via voice commands.",Lighting
+Can I sync my lights with music?,"Yes, enable 'Music Sync' in the app and grant microphone access for beat detection.",Lighting
+How do I group lights together?,Use the Nexora app > Groups > Create Group and add the desired lights for unified control.,Lighting
+Are smart lights energy-efficient?,"Yes, they are LED-based and consume significantly less power than incandescent bulbs.",Lighting
+Why can’t my smart light connect to WiFi?,"Ensure the bulb is within WiFi range, your network is 2.4GHz, and the bulb is in pairing mode.",Connectivity
+Do lights work with voice assistants?,"Yes, Nexora smart lights integrate with Alexa, Google Assistant, and Siri Shortcuts.",Integration
+How do I reset my smart light?,"Turn the light on and off 5 times rapidly until it blinks, then re-pair via the app.",Lighting
+What is the standard warranty on Nexora products?,All Nexora products come with a 2-year limited warranty covering manufacturing defects.,Warranty
+How can I check if my product is still under warranty?,Enter your product serial number on the Nexora website warranty page or check the Nexora app.,Warranty
+What is Nexora’s return policy?,You can return products within 30 days of purchase if unused and in original packaging for a full refund.,Returns
+Can I get a replacement if my device is faulty?,"Yes, replacements are issued for qualifying faults under warranty after diagnostics.",Warranty
+How do I request a repair service?,"Contact Nexora support via the in-app chat, email, or phone with your product details and proof of purchase.",Support
+Are accidental damages covered under warranty?,"No, warranty excludes accidental damage, water damage, and unauthorized repairs.",Warranty
+How long does it take to process a refund?,Refunds are typically processed within 7–10 business days after receiving the returned item.,Returns
+Can I extend my warranty?,"Yes, Nexora offers extended warranty plans at checkout or via the Nexora app.",Warranty
+Does the warranty cover accessories?,Warranty covers accessories purchased as part of the original package for the same warranty period.,Warranty
+Can I transfer the warranty to another person?,"No, warranties are non-transferable and tied to the original purchaser.",Warranty
+Why won’t my device connect to Bluetooth?,Ensure Bluetooth is enabled on both devices and that the Nexora device is in pairing mode.,Connectivity
+How do I update my Nexora app?,Visit the App Store (iOS) or Google Play Store (Android) and update the Nexora app from your account page.,App
+Can I use Nexora devices without WiFi?,"Basic local functions may work, but remote control and cloud features require WiFi.",Connectivity
+Why is my app showing 'Device Offline'?,"This often indicates a network issue—restart your router, ensure the device has power, and reconnect.",App
+Do Nexora devices support 5GHz WiFi?,Currently Nexora devices support 2.4GHz WiFi networks for broader compatibility.,Connectivity
+How do I contact Nexora customer support?,"Use the in-app chat, email support@nexora.com, or call our helpline listed in the app.",Support
+Does Nexora store my personal data?,We collect minimal data required to provide services; refer to our Privacy Policy for details.,Privacy
+How do I delete my account?,Go to Account > Settings > Delete Account in the Nexora app; this will remove personal data per policy.,App
+Can I migrate settings to a new phone?,"Yes, log in to your Nexora account on the new phone, and restore settings from cloud backup.",App
+Does Nexora offer subscription plans?,"Yes, Nexora offers subscription plans for cloud storage, advanced features, and extended warranties.",Subscriptions

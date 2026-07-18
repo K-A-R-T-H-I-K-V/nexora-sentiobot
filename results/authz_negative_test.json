@@ -1,0 +1,61 @@
+{
+  "test": "Increment 7 cross-user denial suite (BOLA/IDOR)",
+  "commit": "9005e7b424c1613724bc7869c82c3441045027ce",
+  "n": 10,
+  "passed": 10,
+  "hard_failures": [],
+  "pending_migration_skips": [],
+  "orders_live_scoped": true,
+  "results": [
+    {
+      "test": "Alice DENIED Bob's conversation messages",
+      "passed": true,
+      "detail": "HTTP 403"
+    },
+    {
+      "test": "Alice CAN read her own conversation messages",
+      "passed": true,
+      "detail": "HTTP 200"
+    },
+    {
+      "test": "Alice DENIED posting into Bob's conversation (chat/stream)",
+      "passed": true,
+      "detail": "HTTP 403"
+    },
+    {
+      "test": "analytics/summary returns 200 for Alice",
+      "passed": true,
+      "detail": "HTTP 200"
+    },
+    {
+      "test": "analytics/summary does NOT contain Bob's query (no cross-user leak)",
+      "passed": true,
+      "detail": "clean"
+    },
+    {
+      "test": "Alice DENIED feedback on Bob's interaction",
+      "passed": true,
+      "detail": "HTTP 403"
+    },
+    {
+      "test": "Alice CAN submit feedback on her own interaction",
+      "passed": true,
+      "detail": "HTTP 200"
+    },
+    {
+      "test": "Alice DENIED Bob's order (code owner-check)",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "test": "Alice CAN see her own order (code owner-check)",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "test": "LIVE: Alice DENIED Bob's real order NX-2025-301",
+      "passed": true,
+      "detail": ""
+    }
+  ]
+}

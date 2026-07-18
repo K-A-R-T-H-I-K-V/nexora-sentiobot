@@ -1,12 +1,29 @@
-nexora_env/
-data/
-parent_docstore/
-summaries/
-vector_db/
-__pycache__/
-parents.pkl
-.env
+# Python Virtual Environments
+backend/venv/
+backend/nexora_env/
+backend/env/
 
-scripts/__pycache__
+# Environment Variables (CRITICAL)
+backend/.env
+frontend/.env.local
 
-scripts/__init__.py
+# Python Cache
+backend/__pycache__/
+backend/**/*.pyc
+.pytest_cache/
+
+# SentioBot RAG & Vector Database Artifacts
+# vector_db / parent_docstore / parents.pkl are BAKED into the image and
+# committed so the deterministic retrieval eval reproduces bit-for-bit in CI and
+# a fresh clone serves without a rebuild (Increment 8). They are small (~2.7MB).
+# A corpus change means re-running ingest and committing the new index.
+# summaries/ stays ignored: it is an ingest-time artifact, not used at serve time.
+backend/summaries/
+
+# Frontend build artifacts
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+
+# Local Claude Code settings (personal, not shared with the team)
+.claude/settings.local.json

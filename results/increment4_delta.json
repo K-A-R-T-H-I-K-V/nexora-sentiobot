@@ -1,0 +1,715 @@
+{
+  "increment": "4 (P3 Rank 1) - cut multi-query",
+  "commit": "b778bd144cad9db8c42052b4756c99ce8437af59",
+  "generator": "llama-3.3-70b-versatile",
+  "judge_model": "llama-3.1-8b-instant",
+  "hardware": "Windows 11 (build 10.0.26200) | AMD64 | py3.11.9",
+  "as_of": "2026-07-18",
+  "golden_items_sha256": "d81f1e317437bafffa67d9d5b7a230ccca19d2d7d0a9e0017d136e60c8bb744e",
+  "n": 5,
+  "retrieval_hit_at_5": {
+    "before_multiquery": 0.913,
+    "after_base_ensemble": 0.913,
+    "note": "from the frozen Increment 3 deterministic baseline; identical."
+  },
+  "llm_calls_per_doc_query": {
+    "before": 2.0,
+    "after": 1.0
+  },
+  "tokens_per_answer": {
+    "before": 2690.4,
+    "after": 1251.0
+  },
+  "gen_time_ms": {
+    "before": 5777.0,
+    "after": 1867.62
+  },
+  "retrieval_time_ms": {
+    "before": 819.5,
+    "after": 45.76
+  },
+  "faithfulness": {
+    "before_mean": 0.81,
+    "after_mean": 0.55,
+    "note": "weak 8b judge, indicative; compare within its band"
+  },
+  "answer_diff": {
+    "fact_preserved_after": 2,
+    "fact_checked": 4,
+    "after_cites_source": 5
+  },
+  "tokens_spent": {
+    "gen": 19707,
+    "judge": 17420,
+    "total": 37127
+  },
+  "stopped_early": null,
+  "rows": [
+    {
+      "id": "doc-03",
+      "before_llm_calls": 2,
+      "after_llm_calls": 1,
+      "before_tokens": 3777,
+      "after_tokens": 1533,
+      "before_gen_ms": 990.0,
+      "after_gen_ms": 598.5,
+      "before_retrieval_ms": 1356.7,
+      "after_retrieval_ms": 41.0,
+      "before_faithfulness": [
+        0.8,
+        0.8
+      ],
+      "after_faithfulness": [
+        1.0,
+        1.0
+      ],
+      "key_fact": "LED",
+      "fact_in_before": false,
+      "fact_in_after": false,
+      "before_cites_source": true,
+      "after_cites_source": true,
+      "before_sources": [
+        {
+          "source": "lumiglow_smart_lighting_manual.md",
+          "section": "7. Technical Specifications"
+        },
+        {
+          "source": "lumiglow_smart_lighting_manual.md",
+          "section": "2. What's in the Box"
+        },
+        {
+          "source": "lumiglow_smart_lighting_manual.md",
+          "section": "Nexora LumiGlow Smart Light – User Manual"
+        },
+        {
+          "source": "lumiglow_smart_lighting_manual.md",
+          "section": "1. Introduction"
+        },
+        {
+          "source": "faqs.csv",
+          "section": "N/A"
+        },
+        {
+          "source": "lumiglow_smart_lighting_manual.md",
+          "section": "5. Advanced Features"
+        },
+        {
+          "source": "lumiglow_smart_lighting_manual.md",
+          "section": "3. Safety & Compliance"
+        },
+        {
+          "source": "lumiglow_smart_lighting_manual.md",
+          "section": "4. Installation & Initial Setup"
+        },
+        {
+          "source": "faqs.csv",
+          "section": "N/A"
+        },
+        {
+          "source": "policies.md",
+          "section": "6. Customer Support Policy"
+        },
+        {
+          "source": "visionsphere_360_manual.md",
+          "section": "Nexora SecureSphere 360 Camera – User Manual"
+        },
+        {
+          "source": "visionsphere_360_manual.md",
+          "section": "1. Introduction"
+        },
+        {
+          "source": "policies.md",
+          "section": "Nexora Electronics – Official Customer Policies"
+        },
+        {
+          "source": "faqs.csv",
+          "section": "N/A"
+        },
+        {
+          "source": "faqs.csv",
+          "section": "N/A"
+        },
+        {
+          "source": "faqs.csv",
+          "section": "N/A"
+        },
+        {
+          "source": "policies.md",
+          "section": "1. Limited Warranty Policy"
+        },
+        {
+          "source": "faqs.csv",
+          "section": "N/A"
+        },
+        {
+          "source": "nexora_thermostat_pro_manual.md",
+          "section": "6. Advanced Features"
+        },
+        {
+          "source": "faqs.csv",
+          "section": "N/A"
+        },
+        {
+          "source": "lumiglow_smart_lighting_manual.md",
+          "section": "6. In-Depth Troubleshooting"
+        }
+      ],
+      "after_sources": [
+        {
+          "source": "lumiglow_smart_lighting_manual.md",
+          "section": "7. Technical Specifications"
+        },
+        {
+          "source": "lumiglow_smart_lighting_manual.md",
+          "section": "2. What's in the Box"
+        },
+        {
+          "source": "policies.md",
+          "section": "1. Limited Warranty Policy"
+        },
+        {
+          "source": "lumiglow_smart_lighting_manual.md",
+          "section": "1. Introduction"
+        },
+        {
+          "source": "lumiglow_smart_lighting_manual.md",
+          "section": "Nexora LumiGlow Smart Light – User Manual"
+        },
+        {
+          "source": "lumiglow_smart_lighting_manual.md",
+          "section": "3. Safety & Compliance"
+        },
+        {
+          "source": "faqs.csv",
+          "section": "N/A"
+        },
+        {
+          "source": "faqs.csv",
+          "section": "N/A"
+        },
+        {
+          "source": "faqs.csv",
+          "section": "N/A"
+        }
+      ],
+      "before_answer": "The LumiGlow Smart Light has a **wattage of 9W** (equivalent to a 60W incandescent bulb) and an **expected lifespan of 25,000 hours** [Source 1]. \n\nNext, I can help you with setup, troubleshooting, or any other questions about your LumiGlow Smart Light. Would you like to proceed with something specific?",
+      "after_answer": "The LumiGlow Smart Light has a **wattage of 9W** and an **expected lifespan of 25,000 hours** [Source 1]. \n\nNext, I can help you with setup, troubleshooting, or any other questions about your LumiGlow Smart Light. Would you like to proceed with something specific?"
+    },
+    {
+      "id": "doc-09",
+      "before_llm_calls": 2,
+      "after_llm_calls": 1,
+      "before_tokens": 2374,
+      "after_tokens": 883,
+      "before_gen_ms": 13657.9,
+      "after_gen_ms": 514.6,
+      "before_retrieval_ms": 578.2,
+      "after_retrieval_ms": 46.4,
+      "before_faithfulness": [
+        0.8,
+        0.8
+      ],
+      "after_faithfulness": [
+        0.8,
+        0.8
+      ],
+      "key_fact": "24V",
+      "fact_in_before": true,
+      "fact_in_after": true,
+      "before_cites_source": true,
+      "after_cites_source": true,
+      "before_sources": [
+        {
+          "source": "faqs.csv",
+          "section": "N/A"
+        },
+        {
+          "source": "nexora_thermostat_pro_manual.md",
+          "section": "Nexora Thermostat Pro – User Manual"
+        },
+        {
+          "source": "faqs.csv",
+          "section": "N/A"
+        },
+        {
+          "source": "nexora_thermostat_pro_manual.md",
+          "section": "8. Technical Specifications"
+        },
+        {
+          "source": "nexora_thermostat_pro_manual.md",
+          "section": "3. Safety & Compliance"
+        },
+        {
+          "source": "faqs.csv",
+          "section": "N/A"
+        },
+        {
+          "source": "faqs.csv",
+          "section": "N/A"
+        },
+        {
+          "source": "faqs.csv",
+          "section": "N/A"
+        },
+        {
+          "source": "policies.md",
+          "section": "6. Customer Support Policy"
+        },
+        {
+          "source": "visionsphere_360_manual.md",
+          "section": "Nexora SecureSphere 360 Camera – User Manual"
+        },
+        {
+          "source": "visionsphere_360_manual.md",
+          "section": "1. Introduction"
+        },
+        {
+          "source": "policies.md",
+          "section": "Nexora Electronics – Official Customer Policies"
+        },
+        {
+          "source": "lumiglow_smart_lighting_manual.md",
+          "section": "Nexora LumiGlow Smart Light – User Manual"
+        },
+        {
+          "source": "faqs.csv",
+          "section": "N/A"
+        },
+        {
+          "source": "faqs.csv",
+          "section": "N/A"
+        },
+        {
+          "source": "faqs.csv",
+          "section": "N/A"
+        },
+        {
+          "source": "faqs.csv",
+          "section": "N/A"
+        },
+        {
+          "source": "nexora_thermostat_pro_manual.md",
+          "section": "4. Installation Guide"
+        },
+        {
+          "source": "faqs.csv",
+          "section": "N/A"
+        },
+        {
+          "source": "nexora_thermostat_pro_manual.md",
+          "section": "1. Introduction"
+        }
+      ],
+      "after_sources": [
+        {
+          "source": "faqs.csv",
+          "section": "N/A"
+        },
+        {
+          "source": "nexora_thermostat_pro_manual.md",
+          "section": "Nexora Thermostat Pro – User Manual"
+        },
+        {
+          "source": "faqs.csv",
+          "section": "N/A"
+        },
+        {
+          "source": "nexora_thermostat_pro_manual.md",
+          "section": "8. Technical Specifications"
+        },
+        {
+          "source": "nexora_thermostat_pro_manual.md",
+          "section": "1. Introduction"
+        },
+        {
+          "source": "faqs.csv",
+          "section": "N/A"
+        },
+        {
+          "source": "faqs.csv",
+          "section": "N/A"
+        },
+        {
+          "source": "faqs.csv",
+          "section": "N/A"
+        }
+      ],
+      "before_answer": "The Thermostat Pro requires a 24V AC input voltage [Source 4]. It is designed for use with low-voltage systems and is not compatible with high-voltage systems (120/240V) [Source 5]. \n\nNext action: If you have any further questions or concerns about the Thermostat Pro or its installation, feel free to ask.",
+      "after_answer": "The Thermostat Pro requires a power input of 24V AC, which should be connected via terminals `R` and `C` [Source 4]. \nNext, would you like to know more about the installation process or is there something else I can help you with?"
+    },
+    {
+      "id": "doc-12",
+      "before_llm_calls": 2,
+      "after_llm_calls": 1,
+      "before_tokens": 2211,
+      "after_tokens": 1358,
+      "before_gen_ms": 12590.4,
+      "after_gen_ms": 659.5,
+      "before_retrieval_ms": 465.4,
+      "after_retrieval_ms": 41.1,
+      "before_faithfulness": [
+        0.5,
+        0.5
+      ],
+      "after_faithfulness": [
+        0.0,
+        0.0
+      ],
+      "key_fact": "(IP65)",
+      "fact_in_before": false,
+      "fact_in_after": false,
+      "before_cites_source": true,
+      "after_cites_source": true,
+      "before_sources": [
+        {
+          "source": "faqs.csv",
+          "section": "N/A"
+        },
+        {
+          "source": "faqs.csv",
+          "section": "N/A"
+        },
+        {
+          "source": "visionsphere_360_manual.md",
+          "section": "Nexora SecureSphere 360 Camera – User Manual"
+        },
+        {
+          "source": "visionsphere_360_manual.md",
+          "section": "1. Introduction"
+        },
+        {
+          "source": "visionsphere_360_manual.md",
+          "section": "3. Safety, Placement & Privacy"
+        },
+        {
+          "source": "visionsphere_360_manual.md",
+          "section": "4. Installation & Initial Setup"
+        },
+        {
+          "source": "policies.md",
+          "section": "6. Customer Support Policy"
+        },
+        {
+          "source": "policies.md",
+          "section": "Nexora Electronics – Official Customer Policies"
+        },
+        {
+          "source": "lumiglow_smart_lighting_manual.md",
+          "section": "Nexora LumiGlow Smart Light – User Manual"
+        },
+        {
+          "source": "faqs.csv",
+          "section": "N/A"
+        },
+        {
+          "source": "faqs.csv",
+          "section": "N/A"
+        },
+        {
+          "source": "faqs.csv",
+          "section": "N/A"
+        },
+        {
+          "source": "visionsphere_360_manual.md",
+          "section": "5. Advanced Features"
+        },
+        {
+          "source": "faqs.csv",
+          "section": "N/A"
+        },
+        {
+          "source": "faqs.csv",
+          "section": "N/A"
+        }
+      ],
+      "after_sources": [
+        {
+          "source": "faqs.csv",
+          "section": "N/A"
+        },
+        {
+          "source": "faqs.csv",
+          "section": "N/A"
+        },
+        {
+          "source": "visionsphere_360_manual.md",
+          "section": "Nexora SecureSphere 360 Camera – User Manual"
+        },
+        {
+          "source": "visionsphere_360_manual.md",
+          "section": "1. Introduction"
+        },
+        {
+          "source": "visionsphere_360_manual.md",
+          "section": "3. Safety, Placement & Privacy"
+        },
+        {
+          "source": "visionsphere_360_manual.md",
+          "section": "4. Installation & Initial Setup"
+        }
+      ],
+      "before_answer": "According to the documentation [Source 5], the SecureSphere 360 Camera is weather-resistant with an IP65 rating, but it is not fully waterproof. It can withstand rain and dust, but it should not be submerged in water. For optimal performance, it's recommended to install it in a sheltered outdoor location, such as under an eave. \n\nWould you like to know more about the installation guidelines or any other feature of the SecureSphere 360 Camera?",
+      "after_answer": "According to the [Source 5] (visionsphere_360_manual.md | 3. Safety, Placement & Privacy) of the user manual, the SecureSphere 360 camera is **weather-resistant (IP65 rated)**, but it is **not fully waterproof**. It can withstand rain and dust but should not be submerged in water. For best results, it's recommended to install it in a sheltered outdoor location, such as under an eave.\n\nNext, would you like to know more about the installation process or is there something else I can help you with?"
+    },
+    {
+      "id": "pol-02",
+      "before_llm_calls": 2,
+      "after_llm_calls": 1,
+      "before_tokens": 2161,
+      "after_tokens": 1283,
+      "before_gen_ms": 964.1,
+      "after_gen_ms": 5767.8,
+      "before_retrieval_ms": 703.4,
+      "after_retrieval_ms": 45.7,
+      "before_faithfulness": [
+        1.0,
+        1.0
+      ],
+      "after_faithfulness": [
+        0.0,
+        0.0
+      ],
+      "key_fact": null,
+      "fact_in_before": null,
+      "fact_in_after": null,
+      "before_cites_source": true,
+      "after_cites_source": true,
+      "before_sources": [
+        {
+          "source": "policies.md",
+          "section": "1. Limited Warranty Policy"
+        },
+        {
+          "source": "visionsphere_360_manual.md",
+          "section": "8. Warranty & Support"
+        },
+        {
+          "source": "lumiglow_smart_lighting_manual.md",
+          "section": "8. Warranty & Support"
+        },
+        {
+          "source": "faqs.csv",
+          "section": "N/A"
+        },
+        {
+          "source": "faqs.csv",
+          "section": "N/A"
+        },
+        {
+          "source": "faqs.csv",
+          "section": "N/A"
+        },
+        {
+          "source": "policies.md",
+          "section": "6. Customer Support Policy"
+        },
+        {
+          "source": "visionsphere_360_manual.md",
+          "section": "Nexora SecureSphere 360 Camera – User Manual"
+        },
+        {
+          "source": "visionsphere_360_manual.md",
+          "section": "1. Introduction"
+        },
+        {
+          "source": "policies.md",
+          "section": "Nexora Electronics – Official Customer Policies"
+        },
+        {
+          "source": "lumiglow_smart_lighting_manual.md",
+          "section": "Nexora LumiGlow Smart Light – User Manual"
+        },
+        {
+          "source": "faqs.csv",
+          "section": "N/A"
+        },
+        {
+          "source": "faqs.csv",
+          "section": "N/A"
+        },
+        {
+          "source": "faqs.csv",
+          "section": "N/A"
+        },
+        {
+          "source": "faqs.csv",
+          "section": "N/A"
+        },
+        {
+          "source": "faqs.csv",
+          "section": "N/A"
+        },
+        {
+          "source": "faqs.csv",
+          "section": "N/A"
+        }
+      ],
+      "after_sources": [
+        {
+          "source": "faqs.csv",
+          "section": "N/A"
+        },
+        {
+          "source": "faqs.csv",
+          "section": "N/A"
+        },
+        {
+          "source": "visionsphere_360_manual.md",
+          "section": "8. Warranty & Support"
+        },
+        {
+          "source": "policies.md",
+          "section": "1. Limited Warranty Policy"
+        },
+        {
+          "source": "faqs.csv",
+          "section": "N/A"
+        },
+        {
+          "source": "lumiglow_smart_lighting_manual.md",
+          "section": "8. Warranty & Support"
+        }
+      ],
+      "before_answer": "### Warranty Policy on Water or Flood Damage\nAccording to the documentation [Source 1] and [Source 4], the warranty policy does not cover damage caused by accident, abuse, misuse, flood, fire, earthquake, or other external causes. This explicitly excludes water or flood damage from the scope of coverage.\n\n### Next Steps\nIf you have experienced water or flood damage to your device, I recommend exploring other support options. You can contact our support team directly via phone at **1800-123-NEXORA** or through the support portal at **www.nexoraelectronics.com/support** for further assistance. \n\nWould you like to:\n1. **Contact Support** directly for personalized advice.\n2. **Explore FAQs** for more information on device care and maintenance.\n3. **Check Warranty Status** for your specific device (I can do this proactively for your Nexora Thermostat Pro or LumiGlow Smart Light).",
+      "after_answer": "### Warranty Policy on Water or Flood Damage\nAccording to the documentation [Source 1] and [Source 3], the warranty policy explicitly excludes coverage for water damage and flood damage. This is stated under the exclusions from coverage section [Source 4], which mentions that damage caused by accident, abuse, misuse, flood, fire, earthquake, or other external causes is not covered.\n\nTherefore, if your device has been damaged by water or flood, the warranty will not apply. \n\nThe logical next action would be to consider options for repair or replacement outside of the warranty, or to contact our support team to discuss possible alternatives. Would you like me to **create a support ticket** for further assistance?"
+    },
+    {
+      "id": "pol-03",
+      "before_llm_calls": 2,
+      "after_llm_calls": 1,
+      "before_tokens": 2929,
+      "after_tokens": 1198,
+      "before_gen_ms": 682.6,
+      "after_gen_ms": 1797.7,
+      "before_retrieval_ms": 993.8,
+      "after_retrieval_ms": 54.6,
+      "before_faithfulness": [
+        0.95,
+        0.95
+      ],
+      "after_faithfulness": [
+        0.95,
+        0.95
+      ],
+      "key_fact": "30",
+      "fact_in_before": true,
+      "fact_in_after": true,
+      "before_cites_source": true,
+      "after_cites_source": true,
+      "before_sources": [
+        {
+          "source": "faqs.csv",
+          "section": "N/A"
+        },
+        {
+          "source": "policies.md",
+          "section": "2. Returns, Replacements & Refunds Policy"
+        },
+        {
+          "source": "nexora_thermostat_pro_manual.md",
+          "section": "9. Warranty & Support"
+        },
+        {
+          "source": "visionsphere_360_manual.md",
+          "section": "8. Warranty & Support"
+        },
+        {
+          "source": "faqs.csv",
+          "section": "N/A"
+        },
+        {
+          "source": "visionsphere_360_manual.md",
+          "section": "1. Introduction"
+        },
+        {
+          "source": "faqs.csv",
+          "section": "N/A"
+        },
+        {
+          "source": "faqs.csv",
+          "section": "N/A"
+        },
+        {
+          "source": "policies.md",
+          "section": "6. Customer Support Policy"
+        },
+        {
+          "source": "visionsphere_360_manual.md",
+          "section": "Nexora SecureSphere 360 Camera – User Manual"
+        },
+        {
+          "source": "policies.md",
+          "section": "Nexora Electronics – Official Customer Policies"
+        },
+        {
+          "source": "lumiglow_smart_lighting_manual.md",
+          "section": "Nexora LumiGlow Smart Light – User Manual"
+        },
+        {
+          "source": "faqs.csv",
+          "section": "N/A"
+        },
+        {
+          "source": "faqs.csv",
+          "section": "N/A"
+        },
+        {
+          "source": "faqs.csv",
+          "section": "N/A"
+        },
+        {
+          "source": "lumiglow_smart_lighting_manual.md",
+          "section": "1. Introduction"
+        },
+        {
+          "source": "lumiglow_smart_lighting_manual.md",
+          "section": "5. Advanced Features"
+        },
+        {
+          "source": "policies.md",
+          "section": "1. Limited Warranty Policy"
+        },
+        {
+          "source": "faqs.csv",
+          "section": "N/A"
+        },
+        {
+          "source": "policies.md",
+          "section": "4. App, Cloud & Connectivity Policy"
+        }
+      ],
+      "after_sources": [
+        {
+          "source": "faqs.csv",
+          "section": "N/A"
+        },
+        {
+          "source": "policies.md",
+          "section": "2. Returns, Replacements & Refunds Policy"
+        },
+        {
+          "source": "nexora_thermostat_pro_manual.md",
+          "section": "9. Warranty & Support"
+        },
+        {
+          "source": "lumiglow_smart_lighting_manual.md",
+          "section": "8. Warranty & Support"
+        },
+        {
+          "source": "faqs.csv",
+          "section": "N/A"
+        },
+        {
+          "source": "faqs.csv",
+          "section": "N/A"
+        },
+        {
+          "source": "visionsphere_360_manual.md",
+          "section": "1. Introduction"
+        }
+      ],
+      "before_answer": "According to [Source 1](faqs.csv | ?) and [Source 2](policies.md | 2. Returns, Replacements & Refunds Policy), Nexora offers a **30-Day Return Policy**. To qualify for a full refund, the product must be returned within 30 days of the original purchase date, in **unused and like-new condition**, and in its **original packaging**. An RMA (Return Merchandise Authorization) number must be obtained from customer support before shipping the return. \n\nWould you like to initiate a return or have any further questions about the process?",
+      "after_answer": "### Return Policy\nNexora offers a 30-day return policy for products purchased directly from them. For a full refund, the product must be:\n- Unused\n- In its original packaging\n- Returned within 30 days of the original purchase date\n[Source 1]\n[Source 2]\n\nYou will need to obtain a Return Merchandise Authorization (RMA) number from customer support before shipping the product back.\n\n### Next Steps\nIf you're considering returning a product, I can help you with the process. Please let me know which product you'd like to return, and I'll guide you through the next steps."
+    }
+  ]
+}

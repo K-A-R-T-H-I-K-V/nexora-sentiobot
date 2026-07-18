@@ -706,3 +706,50 @@ that wobbles under persona attacks but leaks nothing. "Safe to expose" is a
 claim only the independent reviewer gets to make, after re-running the suite and
 writing fresh bypasses. Security is a ratchet: every new bypass becomes a
 permanent test, and the suite is a living asset, not a one-time gate.
+
+## Part 11 - Broken object-level authorization: the red-team finds an instance, production discipline finds the class (Increment 7)
+
+The reviewer found one cross-user leak: on Alice's session, asking for order
+NX-2025-301 returned Bob's order, because the orders table had no owner column so
+the tool's owner check was a no-op. At a DEMO bar you shrug ("just order status,
+low sensitivity") and run the migration. At a PRODUCTION bar you ask the harder
+question: is this ONE bug, or one instance of a CLASS? It was a class.
+
+Broken Object Level Authorization (BOLA), also called IDOR (insecure direct
+object reference), is the most common serious API vulnerability: an endpoint
+takes an object id and returns the object WITHOUT checking the caller is allowed
+to see THAT object. Fixing one instance is trivial (check ownership); the
+discipline is to sweep EVERY id-taking endpoint, because the reflex that missed
+one usually missed several. A one-line planner audit of this codebase confirmed:
+- orders: get_order_by_id filters by order_id only, no owner (the found one).
+- messages: GET /conversations/{id}/messages returns a conversation's messages
+  with no check that it belongs to the caller. Guess/enumerate an id, read
+  someone's chat.
+- analytics: GET /analytics/summary does select("*") over the whole analytics
+  table and hands EVERY user's questions and the bot's answers to ANY logged-in
+  user. The worst of the three, a bulk cross-user dump, and the code even carried
+  a "restrict to admin in prod" comment nobody actioned.
+
+The deeper root cause is architectural, a classic production trap. The database
+has Row-Level Security policies ("users see only their own row"). But the backend
+connects with the SERVICE ROLE key, and the service role BYPASSES RLS by design.
+So those policies protect nothing for app queries; they are a false sense of
+safety. With a privileged service key, the APPLICATION becomes the only
+gatekeeper, and every query must enforce ownership in code. Half did not.
+
+Lessons to keep:
+1. A vulnerability is an instance; the bug is usually a class. When a red-teamer
+   finds one IDOR, audit every id-taking endpoint before calling it fixed. The
+   reviewer finds what it happened to try; production discipline enumerates what
+   it did not.
+2. Know who your gatekeeper is. RLS and app-layer checks are different
+   gatekeepers; a service-role connection silently disables the RLS one. Choose a
+   model deliberately and keep it consistent; never let a bypassed policy stand in
+   for real enforcement.
+3. Sensitivity is not the test; authorization is. "It is only order status" is
+   the wrong frame. The defect is that the access-control model is broken; the
+   payload being mild today says nothing about the messages and analytics sitting
+   behind the same broken door.
+4. Prove a negative. The fix is not "I added a check"; it is a TEST asserting user
+   A is DENIED user B's order, messages, and analytics. An authorization fix
+   without a cross-user denial test is an unverified claim.

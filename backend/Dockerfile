@@ -44,4 +44,8 @@ ENV PYTHONUNBUFFERED=1
 COPY . /app/backend
 
 EXPOSE 8000
-CMD ["uvicorn", "backend.api.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
+# Listen on $PORT so the same image runs on any host: local/compose/CI default to
+# 8000, Hugging Face Spaces routes to app_port (set it to 8000), and Cloud Run
+# injects its own $PORT. Workers default to 1 (one copy of the embedding model in
+# memory - safe on free tiers); raise via WEB_CONCURRENCY where RAM allows.
+CMD ["sh", "-c", "uvicorn backend.api.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers ${WEB_CONCURRENCY:-1}"]

@@ -1,10 +1,12 @@
-# docker-compose.yml — Run the full stack locally with one command.
-# Usage: docker compose up --build
+# docker-compose.yml - Run the full stack locally with one command.
+# Usage:
+#   1) cp backend/.env.example backend/.env  and fill in real values
+#   2) docker compose up --build
 #
-# The backend runs the built image (code baked in), and only the vector /
-# parent stores are mounted from backend/ (they are gitignored and heavy).
-# Real credentials come from backend/.env via env_file; create it from
-# backend/.env.example first.
+# The backend image is fully self-contained: the code AND the RAG index
+# (vector_db / parent_docstore / parents.pkl) are BAKED in, so there are no
+# volume mounts (Increment 8). Real credentials come from backend/.env via
+# env_file and are injected as environment variables, never baked into a layer.
 
 services:
   backend:
@@ -18,11 +20,6 @@ services:
     environment:
       - REDIS_URL=redis://redis:6379
       - DEBUG=true
-    volumes:
-      - ./backend/vector_db:/app/backend/vector_db
-      - ./backend/parent_docstore:/app/backend/parent_docstore
-      - ./backend/parents.pkl:/app/backend/parents.pkl
-      - ./backend/summaries:/app/backend/summaries
     depends_on:
       - redis
     healthcheck:

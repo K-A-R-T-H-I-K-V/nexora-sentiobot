@@ -1,13 +1,11 @@
 {
   "test": "Increment 7 cross-user denial suite (BOLA/IDOR)",
-  "commit": "0c9923d3adb2c9073c77f70e2ac4cee75c290536",
+  "commit": "9005e7b424c1613724bc7869c82c3441045027ce",
   "n": 10,
-  "passed": 9,
+  "passed": 10,
   "hard_failures": [],
-  "pending_migration_skips": [
-    "LIVE orders scoping (migration applied)"
-  ],
-  "orders_live_scoped": false,
+  "pending_migration_skips": [],
+  "orders_live_scoped": true,
   "results": [
     {
       "test": "Alice DENIED Bob's conversation messages",
@@ -55,9 +53,9 @@
       "detail": ""
     },
     {
-      "test": "LIVE orders scoping (migration applied)",
-      "passed": false,
-      "detail": "SKIPPED - orders.user_id not present; run supabase/migrations/increment7_orders_owner.sql"
+      "test": "LIVE: Alice DENIED Bob's real order NX-2025-301",
+      "passed": true,
+      "detail": ""
     }
   ]
 }

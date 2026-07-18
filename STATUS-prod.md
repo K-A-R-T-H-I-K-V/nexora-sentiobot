@@ -1149,7 +1149,7 @@ INCONVENIENT NUMBERS / RESIDUALS (handoff-honesty norm):
 
 ---
 
-### Increment 7 - P4 authorization audit (BOLA/IDOR sweep) (builder, 2026-07-18) - GATE MET pending 1 dev migration
+### Increment 7 - P4 authorization audit (BOLA/IDOR sweep) (builder, 2026-07-18) - GATE MET (orders migration run + live-verified)
 
 Commits on v2-fullstack: (this update). Gatekeeper model: docs/AUTHORIZATION.md.
 Root cause (planner-confirmed): the backend uses the Supabase SERVICE ROLE key,
@@ -1171,30 +1171,25 @@ FIXED + VERIFIED LIVE (results/authz_negative_test.json, 9/10 pass, 0 hard fails
   Denial test: Alice 403 on Bob's interaction; 200 on her own.
 - Tickets: already user-scoped via current_user_id (1.6); confirmed.
 
-PENDING 1 DEV ACTION (A7-ORDERS [P2, = I6-1]): the owner-check code is complete
-(check_order_status refuses order.user_id != caller; proven at code level - a
-mocked Bob-owned order is refused to Alice) but INERT live because orders has no
-owner column. The service-role PostgREST client cannot run DDL, so the migration
-supabase/migrations/increment7_orders_owner.sql must be run once in the Supabase
-SQL editor (or via backend/scripts/apply_migration.py with a direct
-SUPABASE_DB_URL). After it runs, the denial suite's live orders row flips SKIP ->
-PASS (Alice refused Bob's NX-2025-301). This is the last item before the gate is
-fully green.
+A7-ORDERS [P2, = I6-1]: owner-check code (check_order_status refuses
+order.user_id != caller) is complete AND now live. The dev ran
+supabase/migrations/increment7_orders_owner.sql in the Supabase SQL editor;
+verified: orders.user_id present, owners set (301->bob, 302/303->alice). Re-ran
+the denial suite -> 10/10, 0 skips: LIVE Alice DENIED Bob's real NX-2025-301, and
+a separate live check confirms Alice still sees her OWN order NX-2025-303 (no
+regression on own-resource access).
 
-GATE: cross-user denial suite passes for conversations, messages, analytics,
-feedback (yes, live); orders enforced in code (yes) + migration prepared (RUN
-pending); gatekeeper model documented (yes); no regression (hit@5 0.913, re-run;
-own-resource access intact - Alice reads her own convo/analytics/feedback). MET
-except the orders live-migration step (dev). Reviewer independently attempts
-cross-user access on every resource next; P6 deploy gated on the migration + that
-sign-off.
+GATE: cross-user denial suite passes 10/10 LIVE for conversations, messages,
+analytics, feedback, AND orders; orders migration run + verified; gatekeeper model
+documented (docs/AUTHORIZATION.md); no regression (hit@5 0.913; own-resource access
+intact). FULLY MET. Reviewer independently attempts cross-user access on every
+resource next; P6 deploy gated on that sign-off.
 
-INCONVENIENT / HONEST: (1) orders live scoping is NOT yet active - one dev
-migration stands between "code correct" and "system fixed"; until then any user
-can still read any order by id. (2) analytics is scoped to own-user, not restored
-as an admin dashboard; a cross-user admin view is deferred (needs users.is_admin +
-migration). (3) The deeper RLS-with-user-JWT model is deferred; app-layer checks
-are the sole enforcement and must stay consistent as endpoints are added.
+DEFERRED (logged, not implied): (1) analytics is scoped to own-user; a cross-user
+ADMIN dashboard is a separate feature (needs users.is_admin + migration). (2) The
+deeper RLS-with-user-JWT model is deferred; app-layer checks are the sole
+enforcement and must stay consistent as endpoints are added (dev gave standing
+approval for foundational changes when needed to keep it production-grade).
 
 ---
 

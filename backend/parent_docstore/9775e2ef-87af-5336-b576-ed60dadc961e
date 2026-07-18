@@ -1,0 +1,1 @@
+{"lc": 1, "type": "constructor", "id": ["langchain", "schema", "document", "Document"], "kwargs": {"metadata": {"source": "faqs.csv", "row": 19, "Category": "Camera", "doc_id": "9775e2ef-87af-5336-b576-ed60dadc961e"}, "page_content": "Question: Can I view live feeds remotely?\nAnswer: Yes, via the Nexora app with secure end-to-end encrypted streaming.", "type": "Document"}}

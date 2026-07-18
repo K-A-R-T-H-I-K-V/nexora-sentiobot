@@ -13,10 +13,12 @@ backend/**/*.pyc
 .pytest_cache/
 
 # SentioBot RAG & Vector Database Artifacts
-backend/vector_db/
-backend/parent_docstore/
+# vector_db / parent_docstore / parents.pkl are BAKED into the image and
+# committed so the deterministic retrieval eval reproduces bit-for-bit in CI and
+# a fresh clone serves without a rebuild (Increment 8). They are small (~2.7MB).
+# A corpus change means re-running ingest and committing the new index.
+# summaries/ stays ignored: it is an ingest-time artifact, not used at serve time.
 backend/summaries/
-backend/parents.pkl
 
 # Frontend build artifacts
 frontend/node_modules/

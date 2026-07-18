@@ -33,7 +33,7 @@ import httpx
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from backend.core.config import get_settings  # noqa: E402
-from backend.core.output_guard import find_fingerprint, FINGERPRINTS  # noqa: E402
+from backend.core.output_guard import find_fingerprint  # noqa: E402
 from backend.scripts._golden import hardware_stamp  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[2]

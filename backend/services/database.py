@@ -12,7 +12,6 @@ Tables used (see supabase/schema.sql for full DDL):
 """
 
 from __future__ import annotations
-from typing import Any
 from supabase import create_client, Client
 from backend.core.config import get_settings
 

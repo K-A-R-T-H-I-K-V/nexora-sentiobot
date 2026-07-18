@@ -29,7 +29,6 @@ from __future__ import annotations
 import asyncio
 import json
 import pickle
-import os
 import re
 import time
 import logging
@@ -41,8 +40,6 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_groq import ChatGroq
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
-from langchain.storage import LocalFileStore
-from langchain.storage._lc_store import create_kv_docstore
 from langchain_community.retrievers import BM25Retriever
 from langchain.retrievers import EnsembleRetriever
 from langchain.retrievers.multi_query import MultiQueryRetriever
@@ -50,8 +47,6 @@ from langchain_core.prompts import PromptTemplate
 from langchain_core.tools import tool
 from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
-from langgraph.prebuilt import ToolNode
-from pydantic import BaseModel, Field
 
 from backend.core.config import get_settings
 from backend.core.request_context import current_user_id, current_user_products
@@ -199,8 +194,6 @@ def get_retriever():
         persist_directory=s.vector_db_path,
         embedding_function=embedding_model,
     )
-    byte_store = LocalFileStore(s.parent_store_path)
-    store = create_kv_docstore(byte_store)
 
     with open(s.parent_list_path, "rb") as f:
         all_parent_docs = pickle.load(f)

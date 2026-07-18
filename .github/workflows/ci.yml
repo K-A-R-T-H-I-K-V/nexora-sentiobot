@@ -1,0 +1,70 @@
+name: CI
+
+# Runs on every push and PR. Everything here is FREE and deterministic: no paid
+# LLM calls, no Supabase, no secrets. The security + eval suites are gates - a
+# forgotten authorization check, an injection-guard regression, or a retrieval
+# drop turns the build red.
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+# No secrets are used anywhere in this workflow.
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: backend - lint + tests (free)
+    runs-on: ubuntu-latest
+    env:
+      # Dummy values so modules that read settings import cleanly; no real
+      # credentials, and no code path in these tests calls out to a provider.
+      JWT_SECRET: ci-test-secret-not-for-production-0123456789abcdef
+      DEBUG: "true"
+      GROQ_API_KEY: ""
+      SUPABASE_URL: http://localhost
+      SUPABASE_SERVICE_ROLE_KEY: ci
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies (CPU torch, no CUDA)
+        run: |
+          python -m pip install --upgrade pip
+          # requirements.txt declares the PyTorch CPU extra-index-url inline.
+          pip install -r backend/requirements.txt
+          pip install ruff pytest
+
+      - name: Lint (ruff)
+        run: ruff check backend/
+
+      - name: Tests - output guard, injection filter, cross-user authz denial,
+              and the deterministic retrieval eval (hit@5 == 0.913)
+        run: pytest backend/tests/ -q
+
+  frontend:
+    name: frontend - build
+    runs-on: ubuntu-latest
+    env:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install + build
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build

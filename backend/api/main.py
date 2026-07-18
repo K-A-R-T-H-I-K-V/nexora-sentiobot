@@ -95,18 +95,23 @@ class NewConversationRequest(BaseModel):
 # confirm the object belongs to the authenticated caller before touching it.
 
 def require_conversation_owner(conversation_id: str, user_id: str) -> dict:
-    """Return the conversation iff it belongs to user_id; else 404/403.
+    """Return the conversation iff it belongs to user_id; else 404.
 
-    404 for a non-existent id, 403 for someone else's, so we neither act on nor
-    silently ignore a cross-user id.
+    I7-1: 404 for BOTH a non-existent id and someone else's, so the response
+    never reveals whether another user's conversation exists (no id oracle).
     """
     conv = db.get_conversation(conversation_id)
-    if conv is None:
+    if conv is None or conv.get("user_id") != user_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found.")
-    if conv.get("user_id") != user_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
-                            detail="You do not have access to this conversation.")
     return conv
+
+
+def require_analytics_owner(interaction_id: str, user_id: str) -> dict:
+    """Return the analytics row iff it belongs to user_id; else 404 (see I7-1)."""
+    row = db.get_analytics_by_id(interaction_id)
+    if row is None or row.get("user_id") != user_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Interaction not found.")
+    return row
 
 
 # ---------------------------------------------------------------------------
@@ -330,14 +335,8 @@ async def submit_feedback(
     req: FeedbackRequest,
     current_user: Annotated[dict, Depends(auth.get_current_user)],
 ):
-    # BOLA (Increment 7): a user may only rate their OWN interaction. Verify the
-    # analytics row belongs to the caller before updating it.
-    row = db.get_analytics_by_id(req.interaction_id)
-    if row is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Interaction not found.")
-    if row.get("user_id") != current_user["id"]:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
-                            detail="You cannot submit feedback for another user's interaction.")
+    # BOLA (Increment 7): a user may only rate their OWN interaction.
+    require_analytics_owner(req.interaction_id, current_user["id"])
     db.update_analytics_feedback(req.interaction_id, req.feedback)
     return {"status": "ok"}
 

@@ -1,0 +1,22 @@
+# Tooling config for CI (Increment 8). Kept lean: ruff catches real bugs
+# (undefined names, unused imports, obvious mistakes) rather than enforcing a
+# heavy style on a codebase that predates linting.
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+extend-exclude = [
+    "backend/venv",
+    "backend/vector_db",
+    "backend/parent_docstore",
+    "frontend",
+]
+
+[tool.ruff.lint]
+# E9/F = syntax errors + pyflakes (undefined names, unused imports, f-string bugs).
+select = ["E9", "F"]
+# F401 in __init__ files is fine; keep it simple otherwise.
+
+[tool.pytest.ini_options]
+testpaths = ["backend/tests"]
+addopts = "-q"

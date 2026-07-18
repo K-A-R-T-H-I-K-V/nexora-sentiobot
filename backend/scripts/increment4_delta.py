@@ -67,7 +67,6 @@ async def answer_with(retriever, question):
     """Replicates the RAG answer path with the given retriever; returns dict."""
     from backend.agent.agent import get_llm, _build_system_message, _format_sources
     from langchain_core.messages import SystemMessage, HumanMessage
-    from langchain_core.documents import Document
     metrics.start()
     t0 = time.perf_counter()
     docs = await retriever.ainvoke(question, config=metrics.callback_config())

@@ -8,7 +8,6 @@ Tools are imported and registered in agent.py.
 from __future__ import annotations
 import logging
 import uuid
-import json
 from datetime import datetime, timedelta
 from langchain.tools import tool
 

@@ -18,7 +18,6 @@ Writes: results/increment5_adversarial.json
 from __future__ import annotations
 
 import json
-import re
 import subprocess
 import sys
 import time

@@ -333,7 +333,6 @@ def main() -> None:
 
             v_ids, v_docs = zip(*valid)
             batch_num = (len(all_ids) - len(pending_ids)) // BATCH_SIZE + 1
-            total_batches = (len(pending_ids) + BATCH_SIZE - 1) // BATCH_SIZE
 
             log.info("[Batch %d]  %d docs", batch_num, len(v_docs))
 

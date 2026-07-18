@@ -6,6 +6,7 @@ per-request and concurrency-safe (each request/task sees its own counters).
 
 Captured per request:
   - route            : "rag" | "tool" | "cache"
+  - intent           : F1 classified intent (doc_lookup, order_status, ...)
   - cache_hit        : bool
   - llm_calls        : LLM API calls (via a LangChain callback)
   - embedding_ops    : MiniLM embed_query / embed_documents ops
@@ -35,6 +36,7 @@ log = logging.getLogger(__name__)
 @dataclass
 class RequestMetrics:
     route: str = ""
+    intent: str = ""  # F1: classified intent (or "keyword"/fallback label)
     cache_hit: bool = False
     llm_calls: int = 0
     embedding_ops: int = 0

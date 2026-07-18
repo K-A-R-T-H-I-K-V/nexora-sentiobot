@@ -85,6 +85,15 @@ class Settings(BaseSettings):
         Postgres RLS accepts them), else the app's own jwt_secret (legacy)."""
         return self.supabase_jwt_secret or self.jwt_secret
 
+    # --- Routing (Feature F1: intent-aware routing) ---
+    # "embedding" = local ONNX MiniLM intent classifier (adds no LLM call, ~0
+    # tokens on the hot path); "keyword" = the legacy any(keyword in message)
+    # router. Kept selectable so the classifier is reversible and A/B-able.
+    router: str = "embedding"
+    # Below this cosine confidence the embedding classifier defers to the keyword
+    # router (a safe, known-behaviour fallback) rather than guess on a weak match.
+    intent_confidence_threshold: float = 0.35
+
     # --- Retrieval ---
     # Increment 4: base ensemble (BM25 + vector) is the default. The multi-query
     # retriever (extra LLM call per query) is kept behind this flag, reversible

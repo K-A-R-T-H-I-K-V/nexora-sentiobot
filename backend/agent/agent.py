@@ -52,6 +52,7 @@ from backend.core.request_context import current_user_id, current_user_products
 from backend.core import metrics
 from backend.core.onnx_embeddings import get_embeddings
 from backend.core.output_guard import OutputGuard
+from backend.agent.intent_router import route_message
 from backend.agent.tools import check_order_status, check_warranty_status, create_support_ticket
 
 logger = logging.getLogger(__name__)
@@ -532,12 +533,15 @@ async def stream_agent_response(
         elif msg["role"] == "assistant":
             lc_history.append(AIMessage(content=msg["content"]))
 
-    # Check if this is a RAG/documentation query (fast path)
-    is_tool_query = any(
-        kw in user_message.lower()
-        for kw in ["order", "warranty", "serial", "ticket", "human", "support"]
-    )
-    metrics.set_field("route", "tool" if is_tool_query else "rag")
+    # Route the query to the RAG path or the LangGraph tool path. Feature F1
+    # replaces the brittle keyword match with a local, zero-token embedding intent
+    # classifier (backend/agent/intent_router.py); ROUTER=keyword restores the
+    # legacy behaviour. The classifier adds no LLM call and ~0 tokens on the hot
+    # path (one local ONNX embedding of the message, model already loaded).
+    decision = route_message(user_message)
+    is_tool_query = decision.route == "tool"
+    metrics.set_field("route", decision.route)
+    metrics.set_field("intent", decision.intent)
 
     # For pure documentation queries, stream tokens directly via RAG
     if not is_tool_query:

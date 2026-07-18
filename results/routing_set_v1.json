@@ -1,0 +1,48 @@
+{
+  "version": "v1",
+  "purpose": "Labeled routing eval set for Feature F1 (intent-aware routing). Each item carries the IDEAL intent and the IDEAL route (the cheapest path that can answer it correctly). Used to compare the legacy keyword router against the embedding intent classifier. Separate from the FROZEN quality golden set (results/golden_set_v1.json) and NOT frozen: it may grow as new routing edge cases are found.",
+  "as_of_date": "2026-07-18",
+  "route_map_note": "doc_lookup + out_of_scope -> rag; order_status + warranty(status) + ticket_or_escalation + chitchat -> tool. 'warranty' means warranty STATUS for the user's own product/serial (needs the tool); warranty POLICY/coverage/period questions are doc_lookup (answered from docs on the RAG path).",
+  "keyword_misroute_note": "keyword_misroute=true marks items the legacy any(order|warranty|serial|ticket|human|support) router routes WRONG: over-triggering on a bare keyword in a policy question, or under-triggering on an escalation phrased without a trigger word. The eval verifies these claims against the actual keyword router.",
+  "leakage_guard_note": "F1-R1: eval questions must MEASURE GENERALIZATION, not memorization, so none may be a copy or near-copy of a classifier prototype. routing_eval.py enforces this: it fails if any question is a normalized string match of a prototype OR scores >= 0.90 cosine to its nearest prototype. Five original items were near-copies (r-doc-03, r-war-02, r-tik-01, r-oos-01, r-oos-02, cosine 0.91-0.99) and were replaced with genuinely independent phrasings; the concrete-serial prototype was also generalized. Closest surviving item is r-pol-01 at ~0.88 (a genuine paraphrase, reported transparently by the harness).",
+  "limitations": [
+    "F1-R2 (non-English): prototypes are English-only, so a non-English query (e.g. 'cual es el estado de mi pedido') scores below threshold and falls back to the keyword router (safe, no crash, but may take the wrong path). The corpus and product are English-only, so this is low-impact; multilingual routing would need multilingual prototypes or a language-aware step.",
+    "F1-R3 (threshold noise band): the 0.35 confidence threshold sits in a noise band. Empty/whitespace input scores ~0.381 (above -> tool) while a genuine indirect escalation (r-tik-04) scores 0.302 (below -> deferred and missed). The endpoint rejects empty messages upstream, so the empty-string case is harmless; the threshold is documented rather than overfit to this small set."
+  ],
+  "items": [
+    {"id": "r-doc-01", "intent": "doc_lookup", "route": "rag", "question": "How do I install the LumiGlow smart bulb?"},
+    {"id": "r-doc-02", "intent": "doc_lookup", "route": "rag", "question": "How do I factory reset the LumiGlow bulb?", "gate_must_route_correct": true},
+    {"id": "r-doc-03", "intent": "doc_lookup", "route": "rag", "question": "My security camera keeps dropping off the Wi-Fi network at night, how can I stop that?"},
+    {"id": "r-doc-04", "intent": "doc_lookup", "route": "rag", "question": "How high should I mount the SecureSphere 360 camera for best detection?"},
+    {"id": "r-doc-05", "intent": "doc_lookup", "route": "rag", "question": "Is the SecureSphere 360 camera fully waterproof?"},
+    {"id": "r-doc-06", "intent": "doc_lookup", "route": "rag", "question": "What Wi-Fi band does the LumiGlow bulb need for setup?"},
+    {"id": "r-doc-07", "intent": "doc_lookup", "route": "rag", "question": "How do I unfreeze a frozen Thermostat Pro screen?"},
+
+    {"id": "r-pol-01", "intent": "doc_lookup", "route": "rag", "question": "Does the warranty policy cover water or flood damage?", "keyword_misroute": true, "gate_must_route_correct": true, "note": "keyword over-triggers on 'warranty'; this is a general policy question, not a status check"},
+    {"id": "r-pol-02", "intent": "doc_lookup", "route": "rag", "question": "What is the warranty period for the Thermostat Pro compared with the LumiGlow lights?", "keyword_misroute": true, "gate_must_route_correct": true, "note": "keyword over-triggers on 'warranty'; warranty-period is documentation"},
+    {"id": "r-pol-03", "intent": "doc_lookup", "route": "rag", "question": "What are the hours for human customer support?", "keyword_misroute": true, "gate_must_route_correct": true, "note": "keyword over-triggers on 'human'/'support'; support HOURS is a policy/doc question"},
+    {"id": "r-pol-04", "intent": "doc_lookup", "route": "rag", "question": "What is Nexora's return window and the condition for a full refund?"},
+    {"id": "r-pol-05", "intent": "doc_lookup", "route": "rag", "question": "Does Nexora sell my personal data to third parties?"},
+
+    {"id": "r-ord-01", "intent": "order_status", "route": "tool", "question": "What is the status of order NX-2025-301?", "gate_must_route_correct": true},
+    {"id": "r-ord-02", "intent": "order_status", "route": "tool", "question": "Has order NX-2025-303 been delivered yet?"},
+    {"id": "r-ord-03", "intent": "order_status", "route": "tool", "question": "Can you tell me where my package NX-2025-302 is right now?", "keyword_misroute": true, "gate_must_route_correct": true, "note": "keyword under-triggers: no 'order' token, so it wrongly takes the RAG path"},
+
+    {"id": "r-war-01", "intent": "warranty", "route": "tool", "question": "Is my Nexora Thermostat Pro still under warranty?"},
+    {"id": "r-war-02", "intent": "warranty", "route": "tool", "question": "I registered my thermostat last year, can you tell me whether its warranty is still active?"},
+    {"id": "r-war-03", "intent": "warranty", "route": "tool", "question": "Is my LumiGlow smart light still under warranty?"},
+    {"id": "r-war-04", "intent": "warranty", "route": "tool", "question": "What is the warranty status of serial SN-NCS360-CAM789?"},
+
+    {"id": "r-tik-01", "intent": "ticket_or_escalation", "route": "tool", "question": "My camera issue is still not fixed; a support agent needs to handle it, please log a ticket."},
+    {"id": "r-tik-02", "intent": "ticket_or_escalation", "route": "tool", "question": "Please open a support ticket for a camera that will not power on."},
+    {"id": "r-tik-03", "intent": "ticket_or_escalation", "route": "tool", "question": "My thermostat keeps short-cycling and none of the fixes helped. Please escalate this to a person.", "keyword_misroute": true, "known_hard": true, "note": "MIXED intent: a troubleshooting complaint AND an escalation request. The embedding leans doc_lookup because the troubleshooting content dominates. Disclosed residual; NOT gated (not a pure over/under-trigger case) and NOT patched by fitting a prototype to it."},
+    {"id": "r-tik-04", "intent": "ticket_or_escalation", "route": "tool", "question": "This is still not resolved. Can someone follow up with me directly?", "keyword_misroute": true, "known_hard": true, "note": "Indirect escalation. The classifier picks the correct intent but below the confidence threshold, so it conservatively defers to the keyword router. Precision/recall of the threshold, disclosed."},
+
+    {"id": "r-cht-01", "intent": "chitchat", "route": "tool", "question": "Hi there! Thanks for the help earlier.", "keyword_misroute": true, "note": "chitchat: routing to the agent path answers conversationally; the RAG path would return a 'no documentation found' message"},
+    {"id": "r-cht-02", "intent": "chitchat", "route": "tool", "question": "Good morning, what can you do for me?", "keyword_misroute": true},
+
+    {"id": "r-oos-01", "intent": "out_of_scope", "route": "rag", "question": "Which laptop would you say is the best value for a student this year?"},
+    {"id": "r-oos-02", "intent": "out_of_scope", "route": "rag", "question": "Can you help me choose a good dishwasher for my kitchen?"},
+    {"id": "r-oos-03", "intent": "out_of_scope", "route": "rag", "question": "I have chest pain and a bad headache, what medication should I take?"}
+  ]
+}

@@ -24,3 +24,6 @@ backend/summaries/
 frontend/node_modules/
 frontend/.next/
 frontend/out/
+
+# Local Claude Code settings (personal, not shared with the team)
+.claude/settings.local.json

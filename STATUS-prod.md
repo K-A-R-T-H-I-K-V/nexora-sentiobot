@@ -3454,3 +3454,147 @@ tests in the pipeline." Reviewer verifies from a clean checkout.
 ### Sequencing
 P5 (Increment 8) now. RLS-with-JWT: ratified, timing = dev's call (recommend
 post-P6). P6 (deploy) after P5, on the verified app-layer model.
+
+---
+
+### Increment 8 - CONTAINER + CI (P5), adversarial review (reviewer, 2026-07-18)
+
+Scope: 2ba857b..2bd883c (baked index 85c3ef0, multi-stage image 897637f, CI +
+tests + I7-1 fix a671bb0, docs). Re-ran the gates myself and checked the live CI.
+
+VERDICT: CLEAN. Real CI that meaningfully gates the security and eval regressions
+from the earlier increments, a correctly-built secret-safe container, my I7-1
+finding closed, and the committed RAG index is corpus-only with no secrets. The
+findings are one P3 (the container itself is not CI-gated) and two P4 nits.
+
+VERIFIED (re-ran / re-broke / checked live, did not read):
+- I7-1 CLOSED. require_conversation_owner now returns 404 for BOTH a missing and
+  a not-owned id (no existence oracle), and a new require_analytics_owner does
+  the same for feedback. A unit test asserts the not-owned case returns 404, so
+  the fix is pinned.
+- CI is genuinely GREEN on GitHub, not just claimed. `gh run view 29639353876`:
+  both jobs pass (backend lint+tests 1m34s, frontend build 42s), and every recent
+  v2-fullstack run is success. Only annotation is a cosmetic Node 20 deprecation.
+- CI is free and bounded, per doctrine. .github/workflows/ci.yml uses no secrets
+  (permissions: contents:read; dummy JWT/Supabase env; GROQ_API_KEY empty), and
+  no step calls a paid LLM or a real DB. There is no unbounded paid-API risk.
+- The suites are REAL gates, and I reproduced them locally: 19 tests pass. They
+  cover the classes of bug found earlier: authz owner checks incl. the I7-1
+  404-no-oracle (10), input injection filter (3), output-guard zero-leak (5), and
+  the deterministic retrieval eval asserting hit@5 == 0.913 and misses ==
+  [doc-01, doc-13] against the baked index (1). A dropped owner check, an
+  injection-guard regression, or a retrieval drift now turns the build red. This
+  is exactly the CI gate I asked for at the end of Increment 7.
+- ruff clean (I re-ran `ruff check backend/`: all checks passed).
+- Committed RAG index is safe. 91 files, ~2.7MB. I scanned every blob: 0
+  secret-pattern hits and 0 user/PII hits (no serials, no user names) - it is
+  corpus text only (manuals, policies, FAQ), so version-controlling it for the
+  bake and for reproducible CI is fine.
+- Container is built correctly and secret-safe. Multi-stage Dockerfile: build
+  tools live only in the builder stage, the runtime stage copies just the venv +
+  app, torch is the +cpu build (image ~3.2GB, not the old ~13GB CUDA). .env and
+  .env.* are in backend/.dockerignore so no credential is baked into a layer;
+  docker-compose injects real creds via env_file at RUNTIME only. `docker compose
+  config` parses valid. .gitignore correctly un-ignores the index while keeping
+  summaries/ (ingest-time only) out.
+
+FINDINGS:
+
+I8-1 [P3] The container is NOT gated by CI. The workflow runs Python lint+tests
+  and `npm run build`, but never `docker build`. So the multi-stage Dockerfile or
+  the compose file can break (a bad COPY, a missing stage, a dep that fails only
+  in the slim image) without turning the build red; "container + CI" is really
+  "CI, and a separately hand-verified container." The dev states compose up was
+  proven manually, and I did not independently run a full ~3.2GB build on this
+  box (cost), so that claim is currently builder-only. Add a `docker build` job
+  (build, no push, plus a quick `/health` curl against the started image) so the
+  image is gated like the code. Then the P5 claim is fully true and no reviewer
+  needs to build by hand.
+
+I8-2 [P4] The retrieval-eval test mutates tracked files. test_retrieval_eval.py
+  shells out to quality_baseline_retrieval with the DEFAULT label, which
+  overwrites the committed results/quality_retrieval_run_1.json, and Chroma
+  rewrites its index metadata (vector_db/.../length.bin) on read. Harmless in
+  ephemeral CI, but running the suite locally leaves spurious git diffs (I hit
+  this and had to git checkout two files). Point the test at a throwaway label /
+  tmp_path so it asserts without clobbering the committed baseline.
+
+I8-3 [P4] Dockerfile comment is misleading. Line 9 says the RAG index is "(kept
+  in .dockerignore)", but it must be kept OUT of .dockerignore to be baked (and
+  it is). Reword so the next reader does not add it to .dockerignore and silently
+  break the bake.
+
+NOTE (scope of my check): I verified the container CONFIG (multi-stage, CPU
+torch, .env exclusion, compose validity) and the green CI proves the dependency
+install on a clean Linux runner, but I did not run a from-scratch `docker build`
+myself. That is the gap I8-1 asks CI to close; until then the image build is
+builder-verified, not independently reproduced.
+
+BOTTOM LINE: a clean P5. The CI is real, free, and gates the exact
+security/eval regressions that matter, and it is green on GitHub for real; the
+container is correctly multi-stage, CPU-sized, and leaks no secrets into layers;
+I7-1 is closed and pinned by a test. Close I8-1 (add a docker-build job) so the
+container is gated too, fix the two P4 nits, and P6 deploy can proceed on the
+app-layer authorization model that Increment 7 verified.
+
+---
+
+## PLANNER RATIFICATION (2026-07-17): Increment 8 CLEAN + P6 deploy target + Increment 9 (deploy)
+
+### Increment 8 verdict
+CLEAN. Reviewer verified CI genuinely green on GitHub (run 29639353876, both
+jobs), free + bounded (contents:read, dummy env, empty GROQ key, no paid LLM /
+real DB), reproduced 19 tests locally (authz denial incl. 404-no-oracle,
+injection filter, output-guard zero-leak, deterministic hit@5==0.913 against the
+baked index), scanned the committed index (0 secrets/PII), and verified the
+container is multi-stage + secret-safe. I7-1 closed (uniform 404). Findings folded
+into P6:
+- I8-1 [P3]: the container is NOT CI-gated (CI never runs `docker build`). Add a
+  docker-build job (build, no push, + /health curl). Doing it FIRST in P6
+  de-risks deploy by proving the image builds from scratch on a clean runner.
+- I8-2 [P4]: test_retrieval_eval overwrites the committed results JSON / Chroma
+  rewrites metadata -> spurious git diffs. Point the test at a tmp path.
+- I8-3 [P4]: Dockerfile comment about the index and .dockerignore is backwards;
+  reword.
+
+### DECISION: deploy target (ratified with cost)
+Backend -> Google Cloud Run (scale-to-zero); Frontend -> Vercel (free); Redis
+OMITTED for v1 (L1/L2 cache still work; L3 only shares cache across replicas);
+Supabase + Groq stay external. Reasoning: Cloud Run always-free tier (2M req/mo,
+360k GB-sec) covers portfolio traffic at $0; memory ~2GB for the MiniLM + Chroma
++ torch-CPU footprint; matches the dev's Cloud Run resume narrative. Cost of
+scale-to-zero: a cold start on the first hit after idle (image pull + model load,
+tens of seconds) at min-instances=0 ($0); min-instances=1 removes it but is not
+free, so it stays off by default. IMPORTANT caveat for the dev: Cloud Run's free
+tier still requires a BILLING ACCOUNT (a card on file, though it stays $0).
+Zero-cost NO-CARD fallback: Hugging Face Spaces (Docker, free CPU-basic, sleeps
+on idle). Rejected: Render free (512MB, too small for the model); Railway/Fly
+(trial then paid). Monthly cost at portfolio traffic: $0.
+
+### >>> ACTIVE KICKOFF: Increment 9 (P6) - Deploy [gate: public URL answers a real question end-to-end]
+Step 0 (fold in Inc8 findings): add the docker-build CI job (I8-1) so the image
+builds from scratch on a clean runner BEFORE deploy; fix I8-2 (tmp path) and I8-3
+(comment). CI green including docker build.
+Deploy:
+- Backend to Cloud Run: build+push image, memory 2GB, min-instances 0. Secrets
+  via env / Secret Manager, NEVER in the image: GROQ_API_KEY, SUPABASE_URL,
+  SUPABASE_SERVICE_ROLE_KEY, JWT_SECRET (freshly generated `openssl rand -hex 32`,
+  NOT the placeholder), LLM_PROVIDER=groq, USE_MULTIQUERY=false, REDIS_URL empty,
+  ALLOWED_ORIGINS=<vercel url>.
+- Frontend to Vercel: NEXT_PUBLIC_API_URL=<cloud run backend url>.
+- Deploy ORDER (CORS chicken-and-egg): deploy backend -> get URL -> set frontend
+  NEXT_PUBLIC_API_URL -> deploy frontend -> get URL -> set backend
+  ALLOWED_ORIGINS to the frontend URL -> redeploy backend.
+GATE (verified from a machine that is NOT the dev's):
+1. Public frontend loads; login works.
+2. One real chat returns a streamed cited answer (RAG) and a tool path (warranty)
+   works against the live backend.
+3. CORS correct; /health green on the public backend.
+4. LIVE security re-check on the DEPLOYED instance: inj-01 refused (no prompt
+   leak) and a cross-user attempt (Alice cannot read Bob's order/messages) is
+   denied on the PUBLIC url.
+5. No secret in the image or logs; JWT_SECRET is not the placeholder.
+Resume artifact: a LIVE demo link + "deployed on Cloud Run (scale-to-zero) +
+Vercel, $0/mo." Then P7 (observability + honest README, written LAST so it states
+the real URL + verified numbers) and the queued RLS-with-JWT increment (timing:
+dev's call; recommend after this deploy).

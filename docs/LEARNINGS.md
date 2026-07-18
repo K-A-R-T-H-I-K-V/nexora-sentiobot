@@ -856,3 +856,37 @@ zero-leak property, the input-filter false-positive check, the authz denials
 (mocked DB), the retrieval eval (baked index, no tokens), lint, and the frontend
 build. The live LLM suites stay as local/reviewer tools. A green build should mean
 "no regression in anything we can check for free and for certain", and it does.
+
+## Part 12 - Shipping it: scale-to-zero economics, secrets, and the CORS handshake (Increment 9)
+
+Deploy is where a few production concepts become concrete.
+
+Scale-to-zero and the cold-start tradeoff. Cloud Run runs zero instances when
+idle, so you pay nothing between requests, but the first request after idle must
+pull the image and load the model before it answers (tens of seconds for a ~3GB
+ML image). That is the deal for $0: cheap-when-idle, slow-on-wake. You can pay
+for one always-warm instance to remove it, but for a portfolio demo the free cold
+start is the right trade, ideally with a "waking up" hint in the UI so a viewer
+is not staring at a spinner wondering if it broke.
+
+Config and secrets are environment, never image. The same image ships everywhere;
+only the environment it runs in changes (the 12-factor idea). Secrets (Groq key,
+Supabase service key, JWT secret) are injected by the platform at runtime and
+never baked into a layer or committed. .env is in .dockerignore precisely so a
+credential cannot ride along in an image layer. And the JWT secret MUST be freshly
+generated for production, not the placeholder default, because a known secret lets
+anyone forge a login token.
+
+The CORS handshake is a chicken-and-egg. A browser refuses to let the frontend
+talk to the backend unless the backend explicitly allows the frontend's origin,
+but neither knows the other's URL until it is deployed. The fix is an ordering:
+deploy the backend, point the frontend at it, deploy the frontend, then tell the
+backend to allow the frontend's now-known origin and redeploy. Two services that
+depend on each other's URLs always need a deploy order like this; writing it down
+turns a confusing failure into a checklist.
+
+The gate that matters: verify from a machine that is not yours. "Works on my
+laptop" has been the wrong bar all along; for a public URL it is doubly so.
+Re-run a real chat AND a security probe (injection refused, cross-user denied)
+against the PUBLIC url, because deployment reintroduces issues local testing never
+sees: a missing env var, a too-permissive CORS, a secret that did not load.

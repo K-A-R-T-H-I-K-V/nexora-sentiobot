@@ -777,3 +777,37 @@ the Supabase SQL editor. The lesson in that friction: infrastructure changes
 (DDL) and code changes travel on different rails, and "the code is right" is not
 "the system is fixed" until the migration actually runs and the live denial test
 goes green. State which one you have verified.
+
+## Part 11 - Fail-open vs fail-closed, and defense in depth (Increments 7 to 8)
+
+Increment 7 fixed the authorization holes in application code and it is verified
+10/10. But there are two ways to enforce a rule, and the difference is a
+production concept worth owning.
+
+App-layer enforcement (what we have): every endpoint checks ownership in code. If
+a future endpoint FORGETS the check, it leaks. This is FAIL-OPEN: the default,
+when someone makes a mistake, is exposure.
+
+Database enforcement via RLS-with-user-JWT (the stronger foundation): the
+database itself refuses to return rows you do not own, no matter what the app
+code does. A forgotten check then returns nothing instead of everything. This is
+FAIL-CLOSED: the default, on a mistake, is safety.
+
+Fail-closed is the better foundation, so why NOT rush to it? Two production
+instincts:
+1. You do not rip out a verified, working security model as the last step before
+   your first deploy. That trades a known-good state for a large change with its
+   own new-bug risk at the worst possible moment. Defense-in-depth is layered onto
+   a running system, not swapped in under deadline.
+2. There is a cheaper mitigation that closes most of the app-layer model's
+   weakness: put the cross-user DENIAL SUITE in CI. Now a forgotten owner check
+   fails the BUILD before it ships. That converts "fail-open on human error" into
+   "caught by the pipeline," which is most of what RLS-with-JWT buys you, for a
+   fraction of the cost and risk.
+
+The lesson: prefer fail-closed foundations, but sequence big foundational changes
+deliberately, and reach for the cheap mitigation (a regression test in CI) that
+buys most of the safety now. "Production grade" is not "every change immediately";
+it is "every risk either fixed, or consciously owned with a mitigation and a
+plan." RLS-with-JWT stays on the board as a ratified defense-in-depth increment,
+neither dropped nor rushed.

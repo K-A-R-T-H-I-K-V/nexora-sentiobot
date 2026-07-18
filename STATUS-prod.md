@@ -3248,3 +3248,154 @@ This is the real P6 deploy gate, broader than the orders migration alone.
 ### Sequencing
 P5 (container + CI) still parallelizable. P6 (deploy) GATED on Increment 7 (full
 authz audit) + Increment 6 residual sign-off, not just the orders migration.
+
+---
+
+### Increment 7 - AUTHORIZATION AUDIT (BOLA/IDOR sweep), adversarial review (reviewer, 2026-07-18)
+
+Scope: 0c9923d..1f3e6f8 (endpoint authz 75bf3cd, denial suite + migration
+9005e7b/1f3e6f8). This generalizes my I6-1 (order leak) into a full object-level
+authorization sweep. I re-ran the denial suite, enumerated every route myself,
+and re-confirmed my own finding is closed end to end.
+
+VERDICT: CLEAN. This is the right response and it went further than my finding
+required. The sweep correctly identified the root cause (the service-role key
+bypasses RLS, so ownership must be enforced in app code), fixed every user-scoped
+endpoint, found a P1 bulk data leak I had NOT flagged, ran the orders migration,
+and proved the result with a cross-user denial suite that checks both denial AND
+own-access. I reproduced 10/10 live and found no remaining IDOR surface. No
+blocking findings; one P3 nit.
+
+WHAT THE SWEEP FOUND AND FIXED (I verified each):
+- A7-ANALYTICS [was P1, the worst, and NOT in my report]: GET /analytics/summary
+  did select("*") over the ENTIRE analytics table and returned every user's
+  queries and bot answers to any authenticated caller. That is a bulk cross-user
+  data exposure worse than the order leak. Now scoped to the caller
+  (get_analytics_for_user, a WHERE user_id filter at the DB, not a fetch-all).
+  Good catch by the builder; the honest thing is that I missed it and the sweep
+  did not.
+- A7-MESSAGES [P2]: GET /conversations/{id}/messages had no owner check, and
+  POST /chat/stream accepted conversation_id unchecked (read another user's
+  history into context and appended messages). Both now call
+  require_conversation_owner (404 missing / 403 not-owned), and on chat/stream it
+  runs BEFORE any LLM work (0 tokens to reject).
+- A7-FEEDBACK [P3]: /feedback now verifies the analytics row's owner (403 else).
+- A7-ORDERS [my I6-1]: migration run, order ownership enforced.
+
+VERIFIED (re-ran / re-broke, did not read):
+- Cross-user denial suite: I re-ran backend/scripts/authz_negative_test.py live.
+  10/10 PASS, 0 hard failures, 0 pending-migration skips. It asserts, per
+  resource, that Alice is DENIED Bob's object AND that Alice's own access still
+  works (a deny-everything bug would fail the positive cases), covering messages,
+  chat/stream conversation_id, analytics scoping, feedback, and orders.
+- My I6-1 closed END TO END: as Alice, "Check the status of order NX-2025-301"
+  (Bob's order, the exact vector I exploited in Increment 6) now returns no Bob
+  data at all; the tool refuses it because orders.user_id is live and the owner
+  check fires. The migration is genuinely applied to the live DB (the suite's
+  live-orders assertion is PASS, not SKIP).
+- Full route audit, done independently: I enumerated every route. Every
+  object-taking endpoint is now guarded (chat/stream conv_id, messages, feedback,
+  analytics), the list/create routes are inherently caller-scoped
+  (get_conversations_for_user, create for caller), /auth/me returns the token's
+  own user with no id param, and /health/login are public. The three tools
+  (orders, warranty, tickets) are all scoped from Increments 6 and 1.6. I found
+  NO unguarded user-scoped surface.
+- DB helpers correct: get_conversation / get_analytics_by_id fetch the owner
+  column for the check; get_analytics_for_user filters by user_id in the query.
+  require_conversation_owner returns the row only on an owner match, and a null
+  owner fails closed (None != user_id -> 403).
+- AUTHORIZATION.md matches reality: its enforcement table is accurate against the
+  code for every row, it names the service-role/RLS root cause correctly, and it
+  logs the cleaner long-term option (pass the user JWT so RLS enforces) and the
+  admin-analytics deferral honestly.
+
+FINDING (non-blocking):
+
+I7-1 [P3] 404-vs-403 distinguishes existence.
+  file: backend/api/main.py require_conversation_owner (404 missing / 403
+  not-owned) and submit_feedback (404 vs 403).
+  Returning 403 for someone else's object but 404 for a non-existent one lets an
+  attacker learn that a given id EXISTS even when they cannot read it. Practical
+  risk here is negligible because conversation ids are UUIDs and interaction ids
+  are user_id+millisecond, both effectively unguessable, so enumeration is not
+  feasible. If you want to close it fully, return 404 for both missing and
+  not-owned. Nit, not a blocker.
+
+ON "SAFE TO EXPOSE": in the Increment 6 review I withheld sign-off for exactly
+one reason, the live cross-user order leak (I6-1). It is now closed and verified,
+AND the sweep closed a worse analytics leak I had not caught. No cross-user data
+leak remains on any endpoint or tool. The only residuals are the Increment 6
+ones I already accepted (paraphrased prompt extraction that leaks no data; role
+wobbles that leak no data). So the authorization gate I was holding is now GREEN:
+from a data-access standpoint the service is safe to expose. Remaining pre-deploy
+work is operational (P5 container + CI), not security.
+
+BOTTOM LINE: a complete, correct BOLA/IDOR audit. It fixed my finding, found a
+worse one on its own, enforced ownership uniformly, documented the model so the
+next endpoint author cannot re-introduce the class of bug, and proved it with a
+real cross-user denial suite I reproduced 10/10. Ship it. Keep the denial suite
+in CI (P5) so a new endpoint that forgets its owner check fails the build.
+
+---
+
+## PLANNER RATIFICATION (2026-07-17): Increment 7 CLEAN (authz gate closed) + RLS-JWT decision + Increment 8 (P5 container+CI)
+
+### Verdict
+Increment 7 CLEAN. Reviewer independently re-broke I6-1, enumerated every route,
+and re-ran the denial suite (10/10 live). The sweep went BEYOND the found bug: it
+closed A7-ANALYTICS [P1] (a bulk cross-user analytics dump the reviewer had not
+flagged), A7-MESSAGES [P2] on both /messages AND /chat/stream, A7-FEEDBACK [P3],
+and A7-ORDERS (migration run + verified). No unguarded user-scoped surface
+remains; AUTHORIZATION.md documents enforcement + the service-role/RLS root cause
+honestly. MILESTONE: independent sign-off that no cross-user data leak remains on
+any endpoint or tool. Data-access posture: SAFE TO EXPOSE. Remaining pre-deploy
+work is operational (P5).
+- I7-1 [P3, non-blocking]: 404-vs-403 reveals id existence (negligible, ids are
+  UUIDs). Close opportunistically by returning 404 for both not-found and
+  not-authorized.
+
+### DECISION: authorization model (app-layer now; RLS-with-JWT as ratified defense-in-depth)
+The backend uses the service-role key, so RLS is bypassed and app-layer checks
+are the enforcement (fail-OPEN if a future endpoint forgets a check). The stronger
+foundation is RLS-with-user-JWT (DB enforces per-row ownership; a forgotten check
+fails CLOSED). Ratified:
+- KEEP the app-layer model for now: verified 10/10, consistent, and a legitimate
+  production pattern.
+- MANDATORY in P5: the cross-user denial suite goes into CI. This converts the
+  app-layer model's one weakness (a forgotten owner check) from a production leak
+  into a build failure. Non-negotiable.
+- RLS-with-JWT is ratified as a REAL future hardening increment (defense-in-depth
+  on a verified model), NOT a rush-before-deploy rip-and-replace. It needs a
+  deliberate HYBRID design (user-JWT client for user-owned data; service-role
+  retained for system ops like product/order lookups and analytics writes) and a
+  full re-verification. Recommended sequencing: AFTER first deploy (P6), unless
+  the dev wants maximum assurance before going public, in which case it is a
+  dedicated pre-deploy increment. Dev's call on timing; planner ratifies either.
+Honoring the dev's "foundations may change" approval means foundational changes
+when JUSTIFIED and SAFELY SEQUENCED, not reflexively.
+
+### >>> ACTIVE KICKOFF: Increment 8 (P5) - Container + CI [gate: compose up from scratch serves both; CI green]
+- Dockerfile: confirm multi-stage + the CPU-torch slim image (~3.2GB). RATIFIED:
+  BAKE the Chroma index into the image (85 docs, small) rather than mount a
+  volume, so it is self-contained for scale-to-zero targets (Cloud Run / HF
+  Spaces have no persistent volume); rebuild on corpus change. State image-size
+  cost.
+- docker compose up from a FRESH clone serves backend + frontend + redis;
+  /health, login, and one streamed chat work IN-CONTAINER (cold-start proof).
+- GitHub Actions CI (all FREE, zero paid LLM calls, ever):
+  * ruff lint + unit tests
+  * the AUTHZ denial suite (cross-user) - a forgotten owner check fails the build
+  * the injection RED-TEAM suite - a regression fails the build
+  * the DETERMINISTIC eval (retrieval hit@k, zero tokens) - guards the 0.913
+    baseline
+  * frontend npm run build
+  * NO paid LLM path in CI (mock or exclude the RAGAS / live-chat tests)
+- Secrets: CI needs no real keys for the free path; confirm none are required.
+GATE: fresh clone -> docker compose up -> both services serve a real request; CI
+green on a push with the four suites + lint + frontend build running free.
+Resume artifact: CI badge + "containerized, CI-gated, security + eval regression
+tests in the pipeline." Reviewer verifies from a clean checkout.
+
+### Sequencing
+P5 (Increment 8) now. RLS-with-JWT: ratified, timing = dev's call (recommend
+post-P6). P6 (deploy) after P5, on the verified app-layer model.

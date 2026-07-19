@@ -175,8 +175,14 @@ async def chat_stream(
     }
 
     # ---- Cache check (skip the agent, but still persist the turn) ----
-    cached = await cache.get_cached_response(user_id, message)
-    if cached:
+    entry = await cache.get_cached_entry(user_id, message)
+    if entry:
+        cached = entry["answer"]
+        # F2 persist-and-replay: a cache hit shows the SAME groundedness badge,
+        # citations, and sources that were computed on the original answer.
+        cached_grounded = entry.get("grounded")
+        cached_citations = entry.get("citations") or []
+        cached_sources = entry.get("sources") or []
         metrics.set_field("route", "cache")
         metrics.set_field("cache_hit", True)
         # F-3: persist the exchange so cached turns are not missing from
@@ -188,7 +194,10 @@ async def chat_stream(
             conv = db.create_conversation(user_id, title=message[:60])
             conv_id = conv["id"]
         db.save_message(conv_id, "user", message)
-        db.save_message(conv_id, "assistant", cached, {"sources": [], "cached": True})
+        db.save_message(conv_id, "assistant", cached, {
+            "sources": cached_sources, "grounded": cached_grounded,
+            "citations": cached_citations, "cached": True,
+        })
 
         interaction_id = f"{user_id}-{int(datetime.utcnow().timestamp()*1000)}"
         db.log_analytics({
@@ -197,7 +206,7 @@ async def chat_stream(
             "conversation_id": conv_id,
             "user_query": message,
             "bot_response": cached,
-            "retrieved_docs": [],
+            "retrieved_docs": cached_sources,
             "feedback": 0,
             "timestamp": datetime.utcnow().isoformat(),
         })
@@ -206,7 +215,12 @@ async def chat_stream(
         async def cached_stream():
             payload = json.dumps({"type": "token", "data": cached})
             yield f"data: {payload}\n\n"
-            done_data = {"answer": cached, "sources": [], "cached": True, "interaction_id": interaction_id}
+            done_data = {"answer": cached, "sources": cached_sources, "cached": True,
+                         "interaction_id": interaction_id}
+            if cached_grounded:
+                done_data["grounded"] = cached_grounded
+            if cached_citations:
+                done_data["citations"] = cached_citations
             yield f"data: {json.dumps({'type': 'done', 'data': done_data})}\n\n"
             if m is not None:
                 yield f"data: {json.dumps({'type': 'metrics', 'data': m.as_dict()})}\n\n"
@@ -238,9 +252,11 @@ async def chat_stream(
     interaction_id = f"{user_id}-{int(datetime.utcnow().timestamp()*1000)}"
     final_answer_parts: list[str] = []
     sources: list[dict] = []
+    grounded: dict | None = None
+    citations: list[dict] = []
 
     async def generate():
-        nonlocal final_answer_parts, sources
+        nonlocal final_answer_parts, sources, grounded, citations
         # Re-bind the access token inside the streaming generator so the post-answer
         # DB writes (save_message, log_analytics) carry the user's JWT for RLS,
         # even if the request-context ContextVar does not propagate into the
@@ -262,6 +278,8 @@ async def chat_stream(
                         final_answer_parts.append(payload["data"])
                     elif ptype == "done":
                         sources = payload["data"].get("sources", [])
+                        grounded = payload["data"].get("grounded")
+                        citations = payload["data"].get("citations", [])
                         payload["data"]["interaction_id"] = interaction_id
                         out = f"data: {json.dumps(payload)}\n\n"
             except Exception:
@@ -272,8 +290,15 @@ async def chat_stream(
         # Persist assistant message after stream completes
         full_answer = "".join(final_answer_parts)
         if full_answer:
-            db.save_message(conv_id, "assistant", full_answer, {"sources": sources})
-            await cache.set_cached_response(user_id, message, full_answer)
+            db.save_message(conv_id, "assistant", full_answer, {
+                "sources": sources, "grounded": grounded, "citations": citations,
+            })
+            # F2 persist-and-replay: store the badge + citations with the cache
+            # entry so a future cache hit shows the same groundedness state.
+            await cache.set_cached_response(
+                user_id, message, full_answer,
+                grounded=grounded, citations=citations, sources=sources,
+            )
             db.log_analytics({
                 "id": interaction_id,
                 "user_id": user_id,

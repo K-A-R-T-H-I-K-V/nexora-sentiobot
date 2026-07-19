@@ -44,6 +44,7 @@ class RequestMetrics:
     prompt_tokens: int = 0
     completion_tokens: int = 0
     retrieval_ms: float = 0.0
+    groundedness_ms: float = 0.0  # F2: local groundedness+citation pass (0 tokens)
 
     def as_dict(self) -> dict:
         return asdict(self)

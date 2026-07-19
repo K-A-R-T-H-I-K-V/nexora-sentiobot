@@ -94,6 +94,22 @@ class Settings(BaseSettings):
     # router (a safe, known-behaviour fallback) rather than guess on a weak match.
     intent_confidence_threshold: float = 0.35
 
+    # --- Groundedness + citations (Feature F2) ---
+    # Local, zero-token check: after a DOC answer, cosine-match each factual claim
+    # to the retrieved source sentences and extract the supporting span. Emits a
+    # 3-state badge (grounded/partial/unverified) + citations on the done event.
+    groundedness_enabled: bool = True
+    # Per-claim cosine cutoff for "supported". CALIBRATED on real answers + the
+    # RAGAS validation (see backend/scripts/groundedness_validation.py), not
+    # hand-fit to one example. "grounded" requires EVERY claim above this.
+    groundedness_threshold: float = 0.5
+    groundedness_max_citations: int = 6
+    groundedness_span_max_chars: int = 240
+    groundedness_max_source_sentences: int = 120  # bound the embed batch
+    # 8B NLI escalation for the topical-overlap-vs-entailment weakness. OFF by
+    # default (adds tokens); the documented mitigation, not the shipped path.
+    groundedness_nli: bool = False
+
     # --- Retrieval ---
     # Increment 4: base ensemble (BM25 + vector) is the default. The multi-query
     # retriever (extra LLM call per query) is kept behind this flag, reversible

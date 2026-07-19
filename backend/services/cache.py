@@ -27,6 +27,7 @@ Thread / async safety
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 from collections import OrderedDict
 from typing import Any
@@ -176,12 +177,10 @@ def _get_redis():
 
 # ── Public API (drop-in replacement for original cache.py) ───────────────────
 
-async def get_cached_response(user_id: str, query: str) -> str | None:
-    """
-    Returns cached answer string or None on cache miss.
-    Tries L1 -> L2 -> L3 in order. ALL tiers are scoped by user_id, so a
-    personalized answer for one user is never served to another.
-    """
+async def _lookup(user_id: str, query: str) -> str | None:
+    """Tier lookup L1 -> L2 -> L3; returns the raw stored value (a JSON entry
+    string, or a legacy bare-answer string) or None. ALL tiers are user-scoped, so
+    a personalized answer for one user is never served to another."""
     key = _cache_key(user_id, query)
 
     # ── L1: exact LRU ──
@@ -212,18 +211,50 @@ async def get_cached_response(user_id: str, query: str) -> str | None:
     return None
 
 
-async def set_cached_response(user_id: str, query: str, answer: str) -> None:
-    """Write answer to all available cache tiers, scoped to this user."""
+def _parse_entry(raw: str) -> dict:
+    """Parse a stored value into the structured F2 entry. Back-compatible with
+    legacy plain-answer strings (pre-F2 entries in Redis)."""
+    try:
+        obj = json.loads(raw)
+        if isinstance(obj, dict) and "answer" in obj:
+            return obj
+    except (ValueError, TypeError):
+        pass
+    return {"answer": raw, "grounded": None, "citations": [], "sources": []}
+
+
+async def get_cached_entry(user_id: str, query: str) -> dict | None:
+    """Full cached entry {answer, grounded, citations, sources} or None. The
+    endpoint uses this so a cache HIT replays the same groundedness badge and
+    citations everywhere (F2 persist-and-replay)."""
+    raw = await _lookup(user_id, query)
+    return _parse_entry(raw) if raw is not None else None
+
+
+async def get_cached_response(user_id: str, query: str) -> str | None:
+    """Cached answer string or None on miss. Kept for callers that only need text."""
+    entry = await get_cached_entry(user_id, query)
+    return entry["answer"] if entry else None
+
+
+async def set_cached_response(user_id: str, query: str, answer: str, *,
+                              grounded: dict | None = None,
+                              citations: list | None = None,
+                              sources: list | None = None) -> None:
+    """Write the answer plus its F2 groundedness badge, citations, and sources to
+    all tiers, scoped to this user, so a cache hit replays the same badge."""
     key = _cache_key(user_id, query)
     ttl = getattr(get_settings(), "cache_ttl_seconds", 3600)
+    payload = json.dumps({"answer": answer, "grounded": grounded,
+                          "citations": citations or [], "sources": sources or []})
 
-    _lru.set(key, answer)
-    _semantic.set(query, answer, user_id)
+    _lru.set(key, payload)
+    _semantic.set(query, payload, user_id)
 
     r = _get_redis()
     if r:
         try:
-            await r.setex(key, ttl, answer)
+            await r.setex(key, ttl, payload)
         except Exception as exc:
             log.warning("Redis set failed: %s", exc)
 

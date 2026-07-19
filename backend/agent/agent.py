@@ -52,6 +52,7 @@ from backend.core.request_context import current_user_id, current_user_products
 from backend.core import metrics
 from backend.core.onnx_embeddings import get_embeddings
 from backend.core.output_guard import OutputGuard
+from backend.core.groundedness import analyze as _analyze_groundedness
 from backend.agent.intent_router import route_message
 from backend.agent.tools import check_order_status, check_warranty_status, create_support_ticket
 
@@ -243,8 +244,22 @@ def _format_sources(docs: list[Document]) -> list[dict]:
     ]
 
 
-async def _retrieve_context(query: str) -> tuple[str, list[dict]]:
-    """Retrieve docs and return (formatted_context_str, sources_list)."""
+def _source_texts(docs: list[Document]) -> list[dict]:
+    """Per-source page_content aligned with the [Source N] indices, so the F2
+    groundedness pass can extract citation spans. NOT sent verbatim to the client."""
+    return [
+        {
+            "source": d.metadata.get("source", "N/A"),
+            "section": d.metadata.get("section_title", "N/A"),
+            "text": d.page_content,
+        }
+        for d in docs
+    ]
+
+
+async def _retrieve_context(query: str) -> tuple[str, list[dict], list[dict]]:
+    """Retrieve docs and return (context_str, sources, source_texts). source_texts
+    carries the retrieved text per source for the F2 groundedness/citation pass."""
     retriever = get_retriever()
     _t = time.perf_counter()
     # Increment 5 resilience: bound retrieval so a hung call (e.g. the multi-query
@@ -256,14 +271,32 @@ async def _retrieve_context(query: str) -> tuple[str, list[dict]]:
     )
     metrics.set_field("retrieval_ms", (time.perf_counter() - _t) * 1000.0)
     if not docs:
-        return "", []
+        return "", [], []
 
     context_str = "\n\n".join(
         f"[Source {i+1}] ({d.metadata.get('source','?')} | {d.metadata.get('section_title','?')})\n"
         f"{d.page_content}"
         for i, d in enumerate(docs)
     )
-    return context_str, _format_sources(docs)
+    return context_str, _format_sources(docs), _source_texts(docs)
+
+
+async def _groundedness_payload(answer: str, source_texts: list[dict]) -> dict:
+    """F2: run the local, zero-token groundedness+citation pass for a DOC-grounded
+    answer and return {grounded, citations} to merge into the done event. Returns
+    {} (no badge) for pure tool answers (empty source_texts) or on any failure, so
+    a failed check never blocks the answer or shows a false badge."""
+    s = get_settings()
+    if not s.groundedness_enabled or not source_texts or not answer.strip():
+        return {}
+    _t = time.perf_counter()
+    try:
+        payload = await asyncio.to_thread(_analyze_groundedness, answer, source_texts, s)
+    except Exception:
+        logger.exception("groundedness pass failed; emitting no badge")
+        return {}
+    metrics.set_field("groundedness_ms", (time.perf_counter() - _t) * 1000.0)
+    return payload
 
 
 @tool
@@ -273,8 +306,8 @@ async def lookup_documentation(query: str) -> str:
     policy, or warranty-policy question. Returns retrieved documentation
     context tagged with [Source N]; answer using ONLY that context and cite
     the sources inline as [Source N]."""
-    context_str, sources = await _retrieve_context(query)
-    return json.dumps({"context": context_str, "sources": sources})
+    context_str, sources, source_texts = await _retrieve_context(query)
+    return json.dumps({"context": context_str, "sources": sources, "source_texts": source_texts})
 
 
 def _tool_output_text(output) -> str:
@@ -289,6 +322,17 @@ def _extract_tool_sources(output) -> list[dict]:
         data = json.loads(_tool_output_text(output))
         srcs = data.get("sources", [])
         return srcs if isinstance(srcs, list) else []
+    except Exception:
+        return []
+
+
+def _extract_tool_source_texts(output) -> list[dict]:
+    """Pull the per-source retrieved text out of lookup_documentation's JSON, for
+    the F2 groundedness/citation pass on the tool path."""
+    try:
+        data = json.loads(_tool_output_text(output))
+        st = data.get("source_texts", [])
+        return st if isinstance(st, list) else []
     except Exception:
         return []
 
@@ -546,7 +590,7 @@ async def stream_agent_response(
     # For pure documentation queries, stream tokens directly via RAG
     if not is_tool_query:
         try:
-            context_str, sources = await _retrieve_context(user_message)
+            context_str, sources, source_texts = await _retrieve_context(user_message)
 
             if not context_str:
                 yield f"data: {json.dumps({'type': 'token', 'data': 'I could not find relevant documentation for your query. Would you like me to raise a support ticket?'})}\n\n"
@@ -586,7 +630,8 @@ async def stream_agent_response(
                 yield f"data: {json.dumps({'type': 'done', 'data': {'answer': _OUTPUT_BLOCKED_MSG, 'sources': []}})}\n\n"
                 return
 
-            yield f"data: {json.dumps({'type': 'done', 'data': {'answer': full_answer, 'sources': sources}})}\n\n"
+            grounded = await _groundedness_payload(full_answer, source_texts)
+            yield f"data: {json.dumps({'type': 'done', 'data': {'answer': full_answer, 'sources': sources, **grounded}})}\n\n"
             return
 
         except Exception:
@@ -611,6 +656,7 @@ async def stream_agent_response(
     guard = OutputGuard()  # Increment 6: same output-side dump guard as the RAG path
     full_answer = ""
     tool_sources: list[dict] = []
+    tool_source_texts: list[dict] = []
 
     try:
         async for event in graph.astream_events(
@@ -651,6 +697,7 @@ async def stream_agent_response(
                 # output; the agent node writes the final answer.
                 if event.get("name") == "lookup_documentation":
                     tool_sources = _extract_tool_sources(output)
+                    tool_source_texts = _extract_tool_source_texts(output)
                     display = "Retrieved documentation context."
                 else:
                     display = _tool_output_text(output)
@@ -667,7 +714,8 @@ async def stream_agent_response(
             yield f"data: {json.dumps({'type': 'done', 'data': {'answer': _OUTPUT_BLOCKED_MSG, 'sources': []}})}\n\n"
             return
 
-        yield f"data: {json.dumps({'type': 'done', 'data': {'answer': full_answer, 'sources': tool_sources}})}\n\n"
+        grounded = await _groundedness_payload(full_answer, tool_source_texts)
+        yield f"data: {json.dumps({'type': 'done', 'data': {'answer': full_answer, 'sources': tool_sources, **grounded}})}\n\n"
 
     except Exception:
         logger.exception("Agent stream error")

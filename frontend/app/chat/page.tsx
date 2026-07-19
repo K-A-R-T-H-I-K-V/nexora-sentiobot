@@ -26,6 +26,9 @@ import {
   Zap,
   Wrench,
   ChevronRight,
+  ShieldCheck,
+  ShieldAlert,
+  ShieldQuestion,
 } from "lucide-react";
 import {
   streamChat,
@@ -37,6 +40,8 @@ import {
   type Message,
   type Conversation,
   type Source,
+  type Grounded,
+  type Citation,
   type SSEEvent,
 } from "../../lib/api";
 import { useRouter } from "next/navigation";
@@ -50,10 +55,60 @@ interface UIMessage {
   role: "user" | "assistant";
   content: string;
   sources?: Source[];
+  grounded?: Grounded;
+  citations?: Citation[];
   isStreaming?: boolean;
   toolCalls?: { name: string; status: "running" | "done"; output?: string }[];
   interactionId?: string;
   feedback?: 1 | -1 | 0;
+}
+
+// F2 groundedness badge styling + HONEST wording (ratified: never say
+// "verified"/"correct"; the badge claims source MATCH, and the citations shown
+// below are the real check the user makes).
+const GROUNDED_STYLE: Record<
+  Grounded["label"],
+  { cls: string; label: string; title: string; Icon: typeof ShieldCheck }
+> = {
+  grounded: {
+    cls: "bg-green-950 border-green-800 text-green-400",
+    label: "Grounded",
+    title:
+      "Every claim matches a passage in the cited sources (shown below). This checks source support, not factual correctness.",
+    Icon: ShieldCheck,
+  },
+  partial: {
+    cls: "bg-amber-950 border-amber-800 text-amber-400",
+    label: "Partially grounded",
+    title:
+      "Some claims matched a source passage; others could not be matched. Please check the sources below.",
+    Icon: ShieldAlert,
+  },
+  unverified: {
+    cls: "bg-gray-800 border-gray-600 text-gray-400",
+    label: "Unverified",
+    title: "No supporting source passages were matched for this answer.",
+    Icon: ShieldQuestion,
+  },
+};
+
+function GroundednessBadge({ grounded }: { grounded: Grounded }) {
+  const g = GROUNDED_STYLE[grounded.label] ?? GROUNDED_STYLE.unverified;
+  const Icon = g.Icon;
+  return (
+    <span
+      className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border w-fit ${g.cls}`}
+      title={g.title}
+    >
+      <Icon size={11} />
+      {g.label}
+      {grounded.total > 0 && (
+        <span className="opacity-70">
+          {grounded.supported}/{grounded.total}
+        </span>
+      )}
+    </span>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -100,6 +155,8 @@ export default function ChatPage() {
         role: m.role,
         content: m.content,
         sources: m.metadata?.sources,
+        grounded: m.metadata?.grounded,
+        citations: m.metadata?.citations,
       }))
     );
   }, []);
@@ -180,6 +237,8 @@ export default function ChatPage() {
               ...m,
               content: event.data.answer || m.content,
               sources: event.data.sources,
+              grounded: event.data.grounded,
+              citations: event.data.citations,
               interactionId: event.data.interaction_id ?? m.interactionId,
               isStreaming: false,
             };
@@ -338,19 +397,41 @@ export default function ChatPage() {
                   )}
                 </div>
 
-                {/* Sources */}
+                {/* Groundedness badge (F2). Only for doc-grounded answers. */}
+                {msg.role === "assistant" && !msg.isStreaming && msg.grounded && (
+                  <GroundednessBadge grounded={msg.grounded} />
+                )}
+
+                {/* Sources + inline citation spans (F2). Spans render as TEXT
+                    ({c.span}), which React escapes, so source markup cannot
+                    inject HTML (XSS-safe); never dangerouslySetInnerHTML here. */}
                 {msg.sources && msg.sources.length > 0 && (
                   <details className="text-xs text-gray-500 cursor-pointer">
                     <summary className="flex items-center gap-1 hover:text-gray-400">
                       <ChevronRight size={12} />
                       {msg.sources.length} source{msg.sources.length > 1 ? "s" : ""}
                     </summary>
-                    <ul className="mt-1 ml-4 space-y-1">
-                      {msg.sources.map((s, i) => (
-                        <li key={i}>
-                          <span className="text-cyan-700">{s.source}</span> — {s.section}
-                        </li>
-                      ))}
+                    <ul className="mt-1 ml-4 space-y-2">
+                      {msg.sources.map((s, i) => {
+                        const cites = (msg.citations ?? []).filter((c) => c.n === i + 1);
+                        return (
+                          <li key={i}>
+                            <span className="text-cyan-700">{s.source}</span> - {s.section}
+                            {cites.length > 0 && (
+                              <ul className="mt-1 ml-1 space-y-1">
+                                {cites.map((c, j) => (
+                                  <li
+                                    key={j}
+                                    className="border-l-2 border-cyan-800 bg-cyan-950/30 pl-2 py-0.5 text-gray-400 italic"
+                                  >
+                                    &ldquo;{c.span}&rdquo;
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </li>
+                        );
+                      })}
                     </ul>
                   </details>
                 )}

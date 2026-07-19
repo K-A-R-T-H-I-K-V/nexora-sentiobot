@@ -23,13 +23,32 @@ export interface Message {
   id: string;
   role: "user" | "assistant";
   content: string;
-  metadata?: { sources?: Source[] };
+  metadata?: { sources?: Source[]; grounded?: Grounded; citations?: Citation[] };
   created_at: string;
 }
 
 export interface Source {
   source: string;
   section: string;
+}
+
+// F2 groundedness badge. Honest wording: this measures whether each claim matches
+// a retrieved source passage (shown as citations), NOT factual correctness.
+export interface Grounded {
+  label: "grounded" | "partial" | "unverified";
+  score: number;
+  supported: number;
+  total: number;
+}
+
+// F2 inline citation: the literal supporting source sentence behind a claim.
+export interface Citation {
+  n: number;
+  source: string;
+  section: string;
+  span: string;
+  claim?: string;
+  similarity?: number;
 }
 
 export interface Conversation {
@@ -42,7 +61,7 @@ export type SSEEvent =
   | { type: "token"; data: string }
   | { type: "tool_start"; data: { name: string; input: string } }
   | { type: "tool_end"; data: { name: string; output: string } }
-  | { type: "done"; data: { answer: string; sources: Source[]; cached?: boolean; interaction_id?: string } }
+  | { type: "done"; data: { answer: string; sources: Source[]; grounded?: Grounded; citations?: Citation[]; cached?: boolean; interaction_id?: string } }
   | { type: "metrics"; data: Record<string, number | string | boolean> }
   | { type: "error"; data: { message: string } };
 

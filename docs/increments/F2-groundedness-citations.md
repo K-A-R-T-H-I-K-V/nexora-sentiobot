@@ -290,8 +290,89 @@ INCONVENIENT / DEFERRED (honest):
   Groq/Supabase) is component-verified (module + cache round-trip + gate) but not run
   against live infra this session; recommended for the reviewer.
 
-## REVIEW
-(fresh reviewer fills after)
+## REVIEW (fresh reviewer, 2026-07-19)
+
+Scope: F2 as committed (a1cf089 code, eb0f415 docs), with F1-R5 and F4 layered on
+top since. I re-derived from the code and re-ran the gates; I did not trust the build
+log.
+
+VERDICT: STRONG engineering, ship-worthy, but the headline "NO FALSE GREEN
+(deterministic) PASS" is narrower than stated. The design is genuinely good - extracted
+(not generated) citations make hallucinated quotes structurally impossible, the badge
+wording is honest, and the feature fails safe and is correctly scoped. One P2: a class
+of false green the committed gate does not test. One P3 confirming the disclosed
+entailment weakness. No P0/P1, no regression, no security issue.
+
+### Independently confirmed (re-ran / re-derived)
+- Zero-token default: groundedness_nli defaults False, threshold 0.5; the whole suite
+  (incl. test_groundedness -> analyze()) runs green with GROQ_API_KEY empty, so the
+  default path makes no LLM call. The 8B NLI overlay is flag-gated and can only
+  DOWNGRADE (conservative AND), so it cannot introduce a false green either.
+- Anti-hallucination citations: spans are raw slices of the source text (split ->
+  strip -> word-boundary truncate, all substring-preserving); test asserts every span
+  is a literal source substring. Logic sound, test real.
+- Fail-safe + scope: _groundedness_payload (agent.py:285) wraps analyze in try/except
+  -> returns {} (no badge) on any error, and returns {} for empty source_texts, so a
+  pure order/warranty tool answer gets NO badge (verified in code + test). A failed
+  check never blocks the answer and never shows a false badge.
+- Cache privacy preserved: the F2 refactor changed only the stored VALUE (now a JSON
+  entry {answer,grounded,citations,sources}); keying still goes through
+  _cache_key(user_id,query) and the user-scoped semantic tier. check_cache_privacy.py
+  PASS (no cross-user leak, same-user hit works). get_cached_entry is user-scoped like
+  get_cached_response; legacy bare-string entries are handled.
+- XSS-safe + honest wording: citation spans render as escaped React text
+  (&ldquo;{c.span}&rdquo;), never dangerouslySetInnerHTML; badge labels are
+  Grounded/Partially grounded/Unverified (never "verified"/"correct"), and the tooltip
+  says "checks source support, not factual correctness". The mitigation the whole
+  design rests on is genuinely present.
+- No regression: full suite 38 passed (hit@5 0.913, injection filter, output guard,
+  10/10 authz, routing, groundedness, sentiment). 
+- Validation is real + stamped; the one disagreement I re-read myself: doc-12 (local
+  grounded vs RAGAS 0.0) is a genuine weak-8B-judge error - the answer ("weather-
+  resistant, IP65 rated, not fully waterproof", cited to the manual's Safety section)
+  is properly grounded, NOT a false green. Local was right there.
+
+### Findings
+
+F2-R1 [P2, CONFIRMED] The "no false green" gate is narrower than the claim: SHORT or
+  HEDGED unsupported factual claims evade the claim filter and leave the answer labeled
+  "grounded". Distinct from the disclosed entailment weakness (this is claim SELECTION,
+  not topical overlap). Reproduced against the test's own source (a 2-year warranty):
+  - "...covers defects for two years [Source 1]. Ships worldwide free."
+    -> grounded 1/1. The unsupported "Ships worldwide free." is a real factual claim
+    but 21 chars < the 25-char floor in _is_factual_claim, so it is dropped from the
+    denominator and cannot downgrade the label.
+  - "...[Source 1]. Of course it also includes a free smart speaker."
+    -> grounded 1/1. "of course" trips the _NONFACTUAL regex, so the fabricated
+    smart-speaker claim is dropped.
+  The committed test_poisoned_answer_is_never_green (and the validation's synthetic
+  poison) inject a LONG off-topic fabrication, which IS caught -> partial, so CI is
+  green while the property fails for ordinary short/hedged phrasings a real LLM emits.
+  Fix: add a short-claim and a hedged-claim poison case to test_groundedness (they fail
+  today, exposing the gap); then either stop excluding short/hedged FACTUAL claims from
+  the denominator, or narrow the gate's wording to "no false green for on-topic-
+  dissimilar claims above the length floor" and document this evasion class alongside
+  the entailment one. It is a claim-scope/eval-coverage gap (the same shape as F1-R5),
+  not a security hole: the badge already disclaims correctness and shows the source.
+
+F2-R2 [P3, CONFIRMED - disclosed tradeoff] Wrong-number and negation answers get a
+  GREEN "Grounded" badge. Verified: source "two years" / answer "five years [Source 1]"
+  -> grounded 1.0; source "water damage ... are not covered" / answer "Water damage is
+  covered [Source 1]" -> grounded 1.0, and the citation SHOWN literally reads "are not
+  covered", contradicting the answer. This is the ratified, disclosed
+  topical-overlap-is-not-entailment tradeoff, and the mitigations are present (honest
+  wording + the contradicting source sentence is displayed for the user to catch it).
+  Noting it because green (not amber) on a self-contradicting answer is a sharp UX
+  signal that rests entirely on the user reading the source; consider downgrading to
+  "partial" when a citation contains a negation the claim lacks, or a number mismatch.
+  Non-blocking; the design ruled this acceptable.
+
+BOTTOM LINE: F2 is well-built and safe to ship - honest wording, real anti-hallucination
+citations, correct scoping, fail-safe, privacy-preserving, zero-token, no regression.
+Close F2-R1 (add the short/hedged poison tests and either count those claims or narrow
+the "no false green" wording) so the gate's headline matches reality; F2-R2 is the
+accepted, disclosed tradeoff, optionally hardened with a negation/number-mismatch
+amber downgrade.
 
 ---
 
@@ -355,3 +436,62 @@ hallucinated quotes), topical-overlap-is-not-entailment (why the badge must not
 overclaim + the human-in-the-loop backstop), validate-the-label-before-you-ship.
 
 Builder: proceed to PHASE B build to this spec, then verify the gate and report.
+
+---
+
+## F2 CLOSED (2026-07-17) - engineering CLEAN
+All gates met: no-false-green (synthetic poison PASS); citation spans are literal
+source substrings (asserted); the 0.5 threshold was EARNED by validation vs 8B
+RAGAS on the frozen golden set - and the builder correctly caught doc-12 as a
+WEAK-JUDGE error (RAGAS 0.0 but the answer is genuinely grounded; local was right,
+same failure mode as Increment 4), which is local being correct, not a false green.
+No regression (hit@5 0.913, injection, output guard, 10/10 authz; 31 tests). Zero
+tokens on the default path; 8B NLI behind GROUNDEDNESS_NLI (off). Persist-and-replay
++ XSS-safe rendering done. Honest residual: ~0.8-1.0s local-pass latency
+(post-stream, threaded, no TTFT impact; badge resolves ~1s after the answer);
+forward opt logged (memoize corpus sentence embeddings).
+DEFERRED VERIFICATION (explicit, not a blocker): the live badge-in-browser +
+cache-hit/reload replay against real Groq/Supabase was component-verified but NOT
+run on live infra this session. Fold it into the convention-9 LIVE SMOKE at the
+next main release PR (F2 is on v2-fullstack, not yet on main/prod).
+Commits: a1cf089 feat(groundedness); eb0f415 docs(f2). F2 done.
+
+---
+
+## POST-CLOSE CORRECTION - F2-R1 [P2] (planner, 2026-07-17)
+A later reviewer found the "no false green" gate is narrower than the headline:
+short or hedged unsupported factual claims EVADE the claim filter and still get a
+"grounded" badge (a <25-char unsupported clause is dropped; an "of course ..."
+clause trips the non-factual filter). The committed poison test only injects a LONG
+off-topic fabrication - the easy case - so CI is green while the property fails for
+ordinary phrasings. Same shape as F1-R5. This must close before "no false green"
+becomes a resume line.
+F2-R1 FIX:
+- WIDEN the poison set: add short and hedged unsupported-claim cases (they fail
+  today). These become the regression guard.
+- FIX the property so it actually holds: do not drop short factual clauses from
+  claim extraction, and do not treat hedged openers ("of course ...") as
+  non-factual. If full coverage is impractical, NARROW the badge wording so
+  "grounded" does not overclaim for those - but prefer fixing the property.
+- Re-run; report honestly. Per new STANDING CONVENTION 10, the gate must hold on
+  the HARD cases, not just the obvious one.
+F2-R2 [P3, disclosed] wrong-number/negation greens (the ratified topical-overlap
+tradeoff): OPTIONAL amber-downgrade on a detected number/negation mismatch; not
+required, but a cheap, high-trust win if easy.
+
+## F2-R1 FIX DONE (builder, 2026-07-19)
+Fixed the PROPERTY (convention 10: hold on the hard cases), not the wording.
+- Claim extraction no longer drops short or hedged FACTUAL claims: the length floor
+  dropped 25 -> 12 chars and the word floor 4 -> 3, so "Ships worldwide free." (3
+  words) counts; hedged openers ("of course", "sure", "certainly", ...) are STRIPPED
+  as a prefix (leaving the claim behind them) instead of being treated as non-factual,
+  and "of course"/"sure thing" were removed from the pleasantry filter.
+- WIDENED the poison set with two named regression tests that FAILED before the fix:
+  test_short_unsupported_claim_is_not_green ("Ships worldwide free.") and
+  test_hedged_unsupported_claim_is_not_green ("Of course it also includes ..."). Both
+  now downgrade to partial. The old long-off-topic poison test still passes.
+- NO REGRESSION: the increment4 real-answer validation is byte-identical to the F2
+  build (doc-03/09/12 grounded, pol-02/03 partial, synthetic poison PASS) - the lower
+  floors were not binding on real full-sentence claims. Full suite 42 passed.
+- F2-R2 (wrong-number/negation greens) remains the DISCLOSED entailment tradeoff, not
+  touched here (the badge wording already disclaims correctness and shows the source).

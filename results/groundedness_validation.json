@@ -1,6 +1,6 @@
 {
   "test": "F2 groundedness validation: local label vs RAGAS faithfulness + no-false-green (0 tokens)",
-  "commit": "a1cf089caa75ee06e92ebe34d6a9885715761040",
+  "commit": "ff70bd5e4abd3331e9dfc4922f48e8d65773fcfe",
   "as_of": "2026-07-19",
   "hardware": "Windows 11 (build 10.0.26200) | AMD64 | py3.11.9",
   "embedding_model": "all-MiniLM-L6-v2 (ONNX Runtime via fastembed)",

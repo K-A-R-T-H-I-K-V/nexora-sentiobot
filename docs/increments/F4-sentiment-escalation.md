@@ -272,8 +272,76 @@ INCONVENIENT / DISCLOSED (honest):
   RAG-path live faithfulness/never-announce check) but not driven through the full HTTP
   endpoint this session; recommended for the reviewer.
 
-## REVIEW
-(fresh reviewer fills after)
+## REVIEW (fresh reviewer, 2026-07-19)
+
+Scope: F4 as committed (d2d6919 code, ac0bbee docs). Re-derived from code and re-ran
+the gates; did not trust the build log.
+
+VERDICT: CLEAN. This is the strongest of the three features I have reviewed. The
+cardinal-sin property (no false escalation on a calm/happy user) is genuinely robust -
+I tried hard to break it and could not - it is zero-token, leakage-guarded, and
+injection-safe, with the security ordering correct in the code, and it regresses
+nothing. Two P3 hardening notes, no P0/P1/P2.
+
+### Independently confirmed (re-ran / re-derived)
+- NO FALSE ESCALATION, the load-bearing property: sentiment_eval reports 0.000 (0/13)
+  on the controls, and my own adversarial battery could not force one: loud positive
+  ("THIS IS AMAZING!!! works now"), positive profanity ("this is fucking amazing"), loud
+  caps with no whitelist word ("SO GOOD I LOVE IT"), a stray negative word inside
+  positive text ("not broken at all"), and 3 sustained calm turns ALL stay calm / no
+  escalate. The layered defense works: emotion floor+margin gate, negative-ONLY lexical
+  booster, positive-polarity veto, and a seed-at-0 EMA that needs DURATION.
+- Escalation still fires where it should: 3 sustained frustrated turns -> escalate
+  (EMA 0.612); profanity+frustration single turn -> escalate (severe override). Not a
+  deny-everything artifact.
+- Single-spike safety: one maximally-angry message (score 1.0) yields EMA exactly 0.500
+  vs the 0.520 threshold -> correctly NOT escalated. The "needs sustained" guarantee
+  holds.
+- Injection defense NOT weakened (verified in code, the non-negotiable): the layer-1
+  refusal runs at agent.py:566, sentiment at :592, so a frustrated-toned jailbreak is
+  refused before sentiment is computed; the tone is canned STYLE-ONLY text placed BELOW
+  the confidentiality block (_build_system_message:431, "lower priority"), so it cannot
+  coax a leak. Sentiment NEVER biases routing (agent.py:618). Injection + authz suites
+  green.
+- Zero-token: sentiment_nli defaults off; the eval, tests, and my probes all run with
+  GROQ_API_KEY empty and make no LLM call. The 8B overlay can only make escalate MORE
+  conservative, so it cannot introduce a false escalation either.
+- Leakage-guarded: eval max message-to-prototype cosine 0.569 (< 0.90), enforced in
+  sentiment_eval like the F1 routing set. No teaching-to-test.
+- No regression: full suite 38 passed (hit@5 0.913, injection, output guard, 10/10
+  authz, routing, groundedness, sentiment).
+- Honest disclosure: detection accuracy 0.783 (calm 10/10, angry 4/4, confused 1/3,
+  frustrated 3/6) is modest and stated plainly; correctly, the GATE is the safety
+  property (no false escalation), not the accuracy - a missed frustration just yields
+  the default tone (harmless), never a false offer.
+
+Notable contrast with F2: F4 uses the same "no false <bad thing>" safety pattern, but
+its gate genuinely holds under adversarial probing, where F2's no-false-green had the
+short/hedged-claim evasion (F2-R1). F4's controls + my probes found no analogous hole.
+
+### Findings (both P3, non-blocking)
+
+F4-R1 [P3] The single-spike-safe property holds by a razor-thin margin. A single
+  maximum-anger turn lands at EMA 0.500 against a 0.520 threshold - 0.02 of headroom -
+  and it is tightly coupled to sentiment_ema_alpha=0.5. It is SAFE today and largely
+  covered by the 0/13 controls, but no named test asserts "a single max-anger turn does
+  not escalate", so a future retune of alpha or the per-emotion weights could silently
+  start escalating single spikes. Add an explicit test pinning that margin (and/or a
+  comment on the alpha/threshold coupling).
+
+F4-R2 [P3] "Never announce the emotion" is a PROMPT-level (soft) guarantee. The
+  deterministic test asserts the tone STRING forbids naming the mood, not that the LLM
+  obeys; a model can still occasionally blurt "I can see you're frustrated." The build
+  log discloses one live check was done and the wording reworded after it first failed,
+  which is the right instinct, but a full live smoke through the HTTP endpoint over a
+  few frustrated turns is still pending. Run it before "adapts tone without announcing
+  it" becomes a resume claim.
+
+BOTTOM LINE: F4 is well-built and safe to ship. The escalation safety property is real
+and I could not break it, the injection defense is provably untouched, it is zero-token
+and leakage-clean, and nothing frozen regressed. The two P3s are hardening (pin the
+single-spike margin with a test; run the pending live never-announce smoke), not
+blockers.
 
 ---
 
@@ -341,3 +409,37 @@ semantics; why the lexical booster + sarcasm controls); false-escalation as the
 cardinal sin; and why sentiment drives tone+offer but NOT routing.
 
 Builder: proceed to PHASE B build to this spec, then verify the gate and report.
+
+---
+
+## F4 CLOSED (2026-07-17) - CLEAN (the strongest of the three)
+Reviewer could not break the cardinal sin: 0/13 false escalation across calm,
+positive, positive-profanity ("fucking amazing"), loud-caps, and emphatic-calm
+controls, plus his own probes; escalation still fires on sustained frustration +
+abuse. Injection defense provably untouched (guard at agent.py:566 before sentiment
+at :592; tone below the confidentiality block; sentiment never biases routing).
+Zero tokens (~38ms, shared embedding), leakage-guarded (max cosine 0.569), no
+regression (38 tests, hit@5 0.913, 10/10 authz). Detection accuracy 0.783 honestly
+disclosed and correctly NOT the gate (a miss yields default tone, harmless). Builder
+self-caught a live never-announce slip ("I can see you're frustrated") and reworded
+to style+action - guard-the-exit discipline. Commits d2d6919, ac0bbee.
+Two P3 hardening notes:
+- F4-R1: pin the single-spike-safe margin with a named test (EMA 0.500 vs threshold
+  0.520 is razor-thin; a future retune could silently start escalating spikes).
+  Add it in the hardening pass.
+- F4-R2: "never announce" is a prompt-level soft guarantee; a full LIVE smoke over
+  frustrated turns is deferred to the convention-9 live smoke at the next main
+  release PR.
+F4 done.
+
+## F4-R1 FIX DONE (builder, 2026-07-19)
+Pinned the single-spike-safe margin with two named tests so a retune cannot silently
+start escalating spikes:
+- test_single_spike_stays_below_threshold asserts the INVARIANT directly
+  (sentiment_ema_alpha * 1.0 < sentiment_escalation_threshold; today 0.5 < 0.52) AND
+  proves it end-to-end (a maxed non-profane single turn reads score >= 0.9 but does
+  NOT escalate). If a future change to alpha or the threshold breaks the margin, this
+  fails loudly.
+- test_sustained_frustration_does_escalate pins the paired invariant (two frustrated
+  turns DO cross the threshold), so the fix cannot make the router deaf to real
+  sustained frustration either. Full suite 42 passed.

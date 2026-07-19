@@ -53,6 +53,13 @@ here). Do not re-paste them into prompts.
 9. ANY MERGE TO main REDEPLOYS PRODUCTION (Render deploys from main): its gate
    includes a LIVE post-deploy smoke on the public URL (a real answer + no
    regression of the security gates), not just local green.
+10. SAFETY-PROPERTY GATES (any "no false X": no-false-green, no-false-escalation,
+    injection-refused, no-cross-user) MUST test the HARD cases (short, hedged,
+    boundary, adversarial phrasings), not just the obvious one. Widen the
+    poison/negative set until the property holds under probing - or narrow the
+    claim to what actually holds. A green gate on the easy case is NOT the
+    property. This class has recurred (F1-R5, F2-R1); widen-the-poison-set is now
+    a habit.
 
 Feature work: the AI features plan is docs/AI-FEATURES-PLAN.md (+ the roadmap
 html). Each feature is one measured increment; the planner drafts its kickoff into

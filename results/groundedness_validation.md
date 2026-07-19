@@ -1,6 +1,6 @@
 # Feature F2 - Groundedness validation (local vs RAGAS + no-false-green)
 
-- Commit: `a1cf089caa75ee06e92ebe34d6a9885715761040`  |  As-of: 2026-07-19
+- Commit: `ff70bd5e4abd3331e9dfc4922f48e8d65773fcfe`  |  As-of: 2026-07-19
 - Embedding: all-MiniLM-L6-v2 (ONNX Runtime via fastembed) (local, 0 tokens)  |  Threshold: 0.5
 - Source: increment4_delta.json (human-verified real answers + committed 8B RAGAS faithfulness)
 

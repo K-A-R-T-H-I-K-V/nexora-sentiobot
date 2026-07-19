@@ -415,3 +415,24 @@ Disclose-and-widen, per the ruling above. No re-architecture of the fallback.
   the indirect-escalation under-trigger fixes) and stateless routing; both are queued
   as routing v2. This is a claim-SCOPE correction, not a behaviour change: F1 is never
   worse than the keyword router on these cases, and both paths still answer.
+
+### F1-R5 CORRECTION VERIFIED (fresh reviewer, 2026-07-19)
+Re-derived and re-ran, did not trust the write-up. The correction is honest and clean:
+- Numbers reproduced exactly on committed HEAD: embedding 0.8387 / keyword 0.6452 /
+  delta 0.1935, doc_lookup 12/15, misroutes 6/11, fallbacks 3/31. Matches the claimed
+  0.839 / 0.645 / +0.194.
+- The three added items are HONEST MISSES, not gamed: r-res-01 (0.332 -> fallback ->
+  tool), r-res-02 (0.309 -> fallback -> tool), r-res-03 (0.564 -> warranty -> tool) all
+  route wrong and all carry gate_must_route_correct=false, so they legitimately pull the
+  score DOWN. Their intents confirm the exact two mechanisms of F1-R5 (fallback-inherits-
+  keyword, and direct embedder over-trigger).
+- No teaching-to-test: git confirms INTENT_PROTOTYPES is byte-unchanged since F2; only
+  routing_set_v1.json (+3 items) and test_routing.py (floor) changed.
+- No new leakage: my own recompute over all 31 items has max prototype cosine 0.880
+  (r-pol-01), nothing >= 0.90, zero string copies.
+- Floor test honestly lowered 0.85 -> 0.78 (sits below 0.839 with ~0.06 headroom, still
+  a real tripwire, not set just under the number). Full deterministic suite 26 passed,
+  hit@5 0.913 intact.
+F1-R5 CLOSED. The over-trigger is now honestly framed as REDUCED not removed, the eval
+covers the residuals, and the headline number reflects real behaviour. F1-R6 (stateless
+multi-turn) remains a documented P3 for routing v2. Nothing outstanding on F1.

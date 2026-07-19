@@ -1317,3 +1317,49 @@ keeps a bad tone read from turning into a wrong answer. And the whole pass runs 
 injection guard with its tone sitting below the confidentiality block, so a
 frustrated-toned jailbreak is refused, not coddled: empathy must never become a security
 softening.
+
+## Part 20 - A safety gate is only as wide as its hard cases (F2-R1, F4-R1, convention 10)
+
+Two small hardening passes taught the same lesson from opposite ends, and it is now a
+standing convention: a "no false X" gate that only tests the OBVIOUS case is not the
+property, it is a green light with a blind spot.
+
+F2-R1: the denominator is part of the property. F2's "no false green" rests on counting
+every factual claim and requiring all of them to match a source. But claim SELECTION had
+two escape hatches. A short unsupported clause ("Ships worldwide free.", 3 words) fell
+under a 25-character floor and was dropped from the count, so it could not downgrade the
+label. And a hedged fabrication ("Of course it also includes a free speaker.") tripped a
+non-factual filter that listed "of course" as filler, so the whole sentence, fabrication
+and all, was discarded. Both left a poisoned answer labeled GROUNDED. The committed poison
+test only injected a LONG off-topic sentence, the easy case, so CI was green while the
+property failed for the short and hedged phrasings a real LLM emits constantly. The fix
+was to stop excluding claims by LENGTH (floors dropped to 12 chars / 3 words; non-claims
+are excluded by KIND: question, lead-in, citation-apparatus, pure pleasantry) and to
+STRIP a hedge opener rather than discard the sentence behind it, so "of course X" is
+judged on X. The transferable point: when a safety check aggregates over a set, HOW you
+choose the set is as load-bearing as the check itself. A filter you added to reduce noise
+(the length floor, added in F2 to stop list-fragment false-ambers) can quietly become the
+hole an adversary walks through. Test the selection, not just the scoring.
+
+F4-R1: when safety rests on a numeric margin, pin the margin. F4's "a single angry message
+does not escalate" holds because a seed-at-0 EMA of one turn is alpha times the score, and
+alpha (0.5) times a maxed 1.0 is 0.5, just under the 0.52 threshold. That is 0.02 of
+headroom, entirely implicit in two config numbers a future retune could nudge without
+anyone noticing the property broke. So we pinned it with a named test that asserts the
+invariant directly (alpha * 1.0 < threshold) AND end-to-end (a maxed single turn reads
+0.9+ but does not escalate), plus its paired opposite (two frustrated turns DO escalate).
+Now a retune that would silently start escalating spikes, or go deaf to sustained
+frustration, fails the build. The lesson: a safety boundary that lives in a couple of
+constants is one careless edit from gone; write the test that makes the constants
+accountable to the property.
+
+The meta-lesson, now Standing Convention 10. This class has recurred: F1-R5 (the routing
+eval omitted the over-trigger phrasings the router fails), F2-R1 (the poison set omitted
+the short and hedged claims the filter drops). Each time, the gate passed on the case we
+thought of and failed on the case an ordinary user hits. So the rule is explicit now: any
+no-false-X gate must test the HARD cases, short, hedged, boundary, adversarial, and you
+widen the poison/negative set until the property holds under probing, or you narrow the
+claim to exactly what holds. A green gate on the easy case is not the property. The way you
+find the blind spot is the same every time, an adversary (here a fresh reviewer) probing
+outside your curated set; the discipline is to pull those probes IN as permanent tests and
+report the honest, sometimes narrower, truth.

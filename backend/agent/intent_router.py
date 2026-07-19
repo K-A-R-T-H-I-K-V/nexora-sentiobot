@@ -172,10 +172,13 @@ class _IntentClassifier:
             len(phrases), len(INTENT_PROTOTYPES),
         )
 
-    def scores(self, message: str) -> dict[str, float]:
-        """Top (max) cosine of the message against each intent's prototypes."""
+    def scores(self, message: str, embedding=None) -> dict[str, float]:
+        """Top (max) cosine of the message against each intent's prototypes. Accepts
+        an optional precomputed query embedding so the caller can embed the message
+        ONCE and share it (F4 shares this with the sentiment pass)."""
         self.build()
-        q = np.array(get_embeddings().embed_query(message), dtype=np.float32)
+        q = np.array(embedding if embedding is not None
+                     else get_embeddings().embed_query(message), dtype=np.float32)
         qn = q / (np.linalg.norm(q) or 1.0)
         sims = self._matrix @ qn                              # (num_prototypes,)
         best: dict[str, float] = {}
@@ -185,8 +188,8 @@ class _IntentClassifier:
                 best[intent] = fs
         return best
 
-    def classify(self, message: str) -> tuple[str, float, dict[str, float]]:
-        s = self.scores(message)
+    def classify(self, message: str, embedding=None) -> tuple[str, float, dict[str, float]]:
+        s = self.scores(message, embedding)
         intent = max(s, key=s.get)
         return intent, s[intent], s
 
@@ -208,15 +211,16 @@ def warm() -> None:
     _get_classifier().build()
 
 
-def classify_intent(message: str) -> tuple[str, float, dict[str, float]]:
+def classify_intent(message: str, embedding=None) -> tuple[str, float, dict[str, float]]:
     """Raw embedding classification, ignoring the confidence fallback. Returns
     (intent, confidence, per_intent_scores). Used by the routing eval."""
-    return _get_classifier().classify(message)
+    return _get_classifier().classify(message, embedding)
 
 
-def route_message(message: str, router: str | None = None) -> RouteDecision:
+def route_message(message: str, router: str | None = None, embedding=None) -> RouteDecision:
     """Top-level routing decision. router defaults to the ROUTER config flag
-    ('embedding' or 'keyword'). Makes no LLM call and spends no tokens."""
+    ('embedding' or 'keyword'). Makes no LLM call and spends no tokens. An optional
+    precomputed embedding is reused (shared with the F4 sentiment pass) to embed once."""
     settings = get_settings()
     router = router or settings.router
 
@@ -226,7 +230,7 @@ def route_message(message: str, router: str | None = None) -> RouteDecision:
             router="keyword",
         )
 
-    intent, conf, scores = _get_classifier().classify(message)
+    intent, conf, scores = _get_classifier().classify(message, embedding)
     if conf < settings.intent_confidence_threshold:
         # Weak match: defer to the legacy keyword router rather than guess.
         return RouteDecision(

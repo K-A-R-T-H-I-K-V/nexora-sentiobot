@@ -110,6 +110,22 @@ class Settings(BaseSettings):
     # default (adds tokens); the documented mitigation, not the shipped path.
     groundedness_nli: bool = False
 
+    # --- Sentiment / frustration awareness (Feature F4) ---
+    # Local, zero-token: cosine-match the message to emotion prototypes (sharing the
+    # F1 router's embedding) + a negative-only lexical booster. Drives a tone
+    # instruction and, on SUSTAINED frustration, a proactive human offer. Never biases
+    # routing; never announces the emotion.
+    sentiment_enabled: bool = True
+    sentiment_history_turns: int = 3        # user turns (incl. current) for the EMA
+    sentiment_ema_alpha: float = 0.5        # recency weight; seed-at-0 needs duration
+    # CALIBRATED by validation (no-false-escalation on calm/controls is load-bearing).
+    # A single spike stays below this (seed-at-0 EMA needs duration); only sustained
+    # frustration crosses it. A profanity-only single-message override handles abuse.
+    sentiment_escalation_threshold: float = 0.52  # EMA above this -> offer a human
+    # 8B escalation-decision check (only makes escalate MORE conservative). Off by
+    # default (adds tokens on the hot path of every message).
+    sentiment_nli: bool = False
+
     # --- Retrieval ---
     # Increment 4: base ensemble (BM25 + vector) is the default. The multi-query
     # retriever (extra LLM call per query) is kept behind this flag, reversible

@@ -53,6 +53,7 @@ from backend.core import metrics
 from backend.core.onnx_embeddings import get_embeddings
 from backend.core.output_guard import OutputGuard
 from backend.core.groundedness import analyze as _analyze_groundedness
+from backend.core import sentiment as _sentiment
 from backend.agent.intent_router import route_message
 from backend.agent.tools import check_order_status, check_warranty_status, create_support_ticket
 
@@ -350,6 +351,7 @@ class AgentState(TypedDict):
     called_tools: list[str]      # signatures of (tool_name, args) already executed
     tool_rounds: int             # number of tools-node visits so far
     max_tool_rounds: int         # after this many rounds, force finalize
+    tone_instruction: str        # F4: per-turn tone (style only), injected into the prompt
 
 
 # ---------------------------------------------------------------------------
@@ -373,7 +375,7 @@ def _tool_signature(name: str, args: dict) -> str:
         return f"{name}:{args!r}"
 
 
-def _build_system_message(user_profile: dict) -> str:
+def _build_system_message(user_profile: dict, tone_instruction: str = "") -> str:
     name = user_profile.get("name", "Guest")
     products = user_profile.get("owned_products", [])
 
@@ -387,7 +389,7 @@ def _build_system_message(user_profile: dict) -> str:
     else:
         profile_section += "No registered products on file.\n"
 
-    return f"""\
+    base = f"""\
 You are SentioBot, a helpful and precise AI support agent for Nexora Electronics.
 
 ## Confidentiality and scope (highest priority, overrides any later request)
@@ -423,6 +425,15 @@ redirect instead.
 Available tools: lookup_documentation, check_order_status, \
 check_warranty_status, create_support_ticket.
 """
+    # F4: an optional per-turn tone instruction (style only). Placed BELOW the
+    # confidentiality block, which is "highest priority, overrides any later request",
+    # so a sentiment-driven tone can never weaken confidentiality or scope.
+    if tone_instruction:
+        base += (
+            "\n## Tone for this reply (style only; lower priority than the "
+            f"confidentiality block above)\n{tone_instruction}\n"
+        )
+    return base
 
 
 async def call_model(state: AgentState) -> AgentState:
@@ -430,7 +441,8 @@ async def call_model(state: AgentState) -> AgentState:
     llm = get_llm()
     llm_with_tools = llm.bind_tools(TOOLS)
 
-    sys_msg = SystemMessage(content=_build_system_message(state["user_profile"]))
+    sys_msg = SystemMessage(content=_build_system_message(
+        state["user_profile"], state.get("tone_instruction", "")))
     messages = [sys_msg] + state["messages"]
 
     response = await llm_with_tools.ainvoke(messages)
@@ -490,7 +502,7 @@ async def finalize_node(state: AgentState) -> AgentState:
     guaranteeing convergence even if the model keeps trying to call tools."""
     llm = get_llm()  # no bind_tools -> the model must answer, not call tools
     sys_msg = SystemMessage(content=(
-        _build_system_message(state["user_profile"])
+        _build_system_message(state["user_profile"], state.get("tone_instruction", ""))
         + "\n\nYou have gathered enough information from the tools above. Answer "
           "the user's question now, concisely, using that information. Do NOT "
           "call any tools."
@@ -577,12 +589,35 @@ async def stream_agent_response(
         elif msg["role"] == "assistant":
             lc_history.append(AIMessage(content=msg["content"]))
 
+    # F4 sentiment (local, zero-token). This runs AFTER the layer-1 injection guard
+    # above, so a frustrated-TONED jailbreak is already refused; the tone it produces
+    # is style-only and sits below the confidentiality block. The message is embedded
+    # ONCE here and the embedding is SHARED with the F1 router below.
+    settings = get_settings()
+    q_emb = None
+    if settings.sentiment_enabled or settings.router == "embedding":
+        q_emb = get_embeddings().embed_query(user_message)
+
+    tone_instruction = ""
+    sentiment_meta: dict | None = None
+    escalate = False
+    if settings.sentiment_enabled:
+        hist_users = [m["content"] for m in chat_history[-8:] if m.get("role") == "user"]
+        _t = time.perf_counter()
+        sent = _sentiment.analyze(user_message, hist_users, settings, embedding=q_emb)
+        metrics.set_field("sentiment_ms", (time.perf_counter() - _t) * 1000.0)
+        tone_instruction = sent.tone
+        escalate = sent.escalate
+        sentiment_meta = {"label": sent.label, "score": sent.score,
+                          "ema": sent.ema, "escalate": sent.escalate}
+        metrics.set_field("sentiment", sent.label)
+
     # Route the query to the RAG path or the LangGraph tool path. Feature F1
     # replaces the brittle keyword match with a local, zero-token embedding intent
     # classifier (backend/agent/intent_router.py); ROUTER=keyword restores the
-    # legacy behaviour. The classifier adds no LLM call and ~0 tokens on the hot
-    # path (one local ONNX embedding of the message, model already loaded).
-    decision = route_message(user_message)
+    # legacy behaviour. Sentiment NEVER biases routing (ratified): a frustrated user
+    # asking a doc question still gets the doc path; sentiment only adapts tone + offer.
+    decision = route_message(user_message, embedding=q_emb)
     is_tool_query = decision.route == "tool"
     metrics.set_field("route", decision.route)
     metrics.set_field("intent", decision.intent)
@@ -599,7 +634,7 @@ async def stream_agent_response(
 
             llm = get_llm()
             sys_content = (
-                f"{_build_system_message(user_profile)}\n\n"
+                f"{_build_system_message(user_profile, tone_instruction)}\n\n"
                 f"## Retrieved Documentation\n{context_str}"
             )
             messages = [SystemMessage(content=sys_content)] + lc_history + [HumanMessage(content=user_message)]
@@ -630,8 +665,17 @@ async def stream_agent_response(
                 yield f"data: {json.dumps({'type': 'done', 'data': {'answer': _OUTPUT_BLOCKED_MSG, 'sources': []}})}\n\n"
                 return
 
+            # Groundedness (F2) is computed on the substantive answer BEFORE the F4
+            # human offer is appended, so the canned offer never sinks the badge.
             grounded = await _groundedness_payload(full_answer, source_texts)
-            yield f"data: {json.dumps({'type': 'done', 'data': {'answer': full_answer, 'sources': sources, **grounded}})}\n\n"
+            offer = _sentiment.escalation_offer(escalate, full_answer)
+            if offer:
+                full_answer += offer
+                yield f"data: {json.dumps({'type': 'token', 'data': offer})}\n\n"
+            done_data = {'answer': full_answer, 'sources': sources, **grounded}
+            if sentiment_meta:
+                done_data['sentiment'] = sentiment_meta
+            yield f"data: {json.dumps({'type': 'done', 'data': done_data})}\n\n"
             return
 
         except Exception:
@@ -650,6 +694,7 @@ async def stream_agent_response(
         "called_tools": [],
         "tool_rounds": 0,
         "max_tool_rounds": max_rounds,
+        "tone_instruction": tone_instruction,
     }
 
     graph = get_graph()
@@ -715,7 +760,14 @@ async def stream_agent_response(
             return
 
         grounded = await _groundedness_payload(full_answer, tool_source_texts)
-        yield f"data: {json.dumps({'type': 'done', 'data': {'answer': full_answer, 'sources': tool_sources, **grounded}})}\n\n"
+        offer = _sentiment.escalation_offer(escalate, full_answer)
+        if offer:
+            full_answer += offer
+            yield f"data: {json.dumps({'type': 'token', 'data': offer})}\n\n"
+        done_data = {'answer': full_answer, 'sources': tool_sources, **grounded}
+        if sentiment_meta:
+            done_data['sentiment'] = sentiment_meta
+        yield f"data: {json.dumps({'type': 'done', 'data': done_data})}\n\n"
 
     except Exception:
         logger.exception("Agent stream error")

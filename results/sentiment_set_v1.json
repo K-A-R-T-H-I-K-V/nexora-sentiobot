@@ -1,0 +1,47 @@
+{
+  "version": "v1",
+  "purpose": "Labeled sentiment eval set for Feature F4. Single messages carry an ideal emotion label; escalation_scenarios carry multi-turn sequences with an expected escalate decision. Separate from the frozen quality golden set and NOT frozen (may grow as edge cases surface).",
+  "as_of_date": "2026-07-19",
+  "labels_note": "Emotion labels: calm | confused | frustrated | angry. Controls (control field): emphatic_calm = loud-but-POSITIVE; positive = resolved/grateful; sarcasm = frustration expressed sarcastically (ideal label reflects the real feeling). The LOAD-BEARING metric is false-escalation on the no-escalate controls (calm/confused/emphatic_calm/positive), the F2 no-false-green applied to emotion.",
+  "leakage_guard_note": "Eval messages must not near-copy a sentiment prototype (sentiment_eval.py fails on normalized string match OR cosine >= 0.90), so accuracy measures generalization.",
+  "escalation_note": "Single messages should NOT escalate (escalation requires SUSTAINED frustration via the EMA), EXCEPT explicit profanity (a high-precision abuse override). Multi-turn escalation is measured by escalation_scenarios.",
+  "messages": [
+    {"id": "s-calm-01", "text": "How do I pair the LumiGlow bulb with the mobile app?", "label": "calm"},
+    {"id": "s-calm-02", "text": "What is the return window for an online order?", "label": "calm"},
+    {"id": "s-calm-03", "text": "Can you tell me the camera's recording resolution?", "label": "calm"},
+    {"id": "s-calm-04", "text": "Where do I download the Nexora app for Android?", "label": "calm"},
+    {"id": "s-calm-05", "text": "my thermostat display is blank, how do I turn it on", "label": "calm"},
+    {"id": "s-calm-06", "text": "is the outdoor camera okay to install under an eave", "label": "calm"},
+
+    {"id": "s-conf-01", "text": "I do not get which wire goes into which terminal on the thermostat", "label": "confused"},
+    {"id": "s-conf-02", "text": "wait, am I supposed to press the button once or hold it down?", "label": "confused"},
+    {"id": "s-conf-03", "text": "I am a bit lost, which screen in the app has the reset option?", "label": "confused"},
+
+    {"id": "s-frus-01", "text": "I have tried the reset twice and it still will not pair with my phone", "label": "frustrated"},
+    {"id": "s-frus-02", "text": "the camera keeps dropping offline no matter what I do", "label": "frustrated"},
+    {"id": "s-frus-03", "text": "why does the setup keep failing every single time, so annoying", "label": "frustrated"},
+    {"id": "s-frus-04", "text": "none of your steps helped and I have wasted an hour on this", "label": "frustrated"},
+
+    {"id": "s-angry-01", "text": "I am done wasting my whole afternoon on this broken piece of junk", "label": "angry"},
+    {"id": "s-angry-02", "text": "this is the worst product I have ever bought, a complete ripoff", "label": "angry"},
+    {"id": "s-angry-03", "text": "absolutely unacceptable, nobody has helped me and I want my money back", "label": "angry"},
+
+    {"id": "s-ctrl-emph-01", "text": "This app is FANTASTIC, it works perfectly, thank you so much!!!", "label": "calm", "control": "emphatic_calm"},
+    {"id": "s-ctrl-emph-02", "text": "WOW the new camera is INCREDIBLE, I absolutely love it!!!", "label": "calm", "control": "emphatic_calm"},
+    {"id": "s-ctrl-pos-01", "text": "great, that fixed it, thanks so much for the help", "label": "calm", "control": "positive"},
+    {"id": "s-ctrl-pos-02", "text": "it works now, I really appreciate you walking me through it", "label": "calm", "control": "positive"},
+
+    {"id": "s-ctrl-sarc-01", "text": "oh fantastic, another update that broke everything again", "label": "frustrated", "control": "sarcasm"},
+    {"id": "s-ctrl-sarc-02", "text": "wow, three hours in and it still does not work, just brilliant", "label": "frustrated", "control": "sarcasm"},
+
+    {"id": "s-abuse-01", "text": "this is fucking useless, you people are hopeless", "label": "angry", "expect_escalate": true}
+  ],
+  "escalation_scenarios": [
+    {"id": "esc-sustained-01", "turns": ["this still will not connect to wifi", "i already tried that and nothing changed", "still broken, i am getting really frustrated with this"], "expect_escalate": true, "note": "sustained frustration across three turns"},
+    {"id": "esc-sustained-02", "turns": ["the app keeps crashing on setup", "i reinstalled it and it crashed again", "come on, this is ridiculous, none of this works"], "expect_escalate": true},
+    {"id": "esc-calm-01", "turns": ["how do I set up the bulb", "and what wifi band does it need"], "expect_escalate": false, "note": "calm multi-turn, must not escalate"},
+    {"id": "esc-single-frustrated", "turns": ["this reset just failed again, so annoying"], "expect_escalate": false, "note": "a single frustrated turn is not sustained"},
+    {"id": "esc-resolved", "turns": ["this still will not connect", "i tried that already and nothing", "oh actually it works now, thanks for the help"], "expect_escalate": false, "note": "frustration that RESOLVES must de-escalate on the calm turn"},
+    {"id": "esc-abuse-single", "turns": ["this is absolute garbage, what the hell is wrong with it"], "expect_escalate": true, "note": "explicit profanity single-message override"}
+  ]
+}

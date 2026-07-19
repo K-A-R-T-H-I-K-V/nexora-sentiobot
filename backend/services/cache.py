@@ -240,13 +240,16 @@ async def get_cached_response(user_id: str, query: str) -> str | None:
 async def set_cached_response(user_id: str, query: str, answer: str, *,
                               grounded: dict | None = None,
                               citations: list | None = None,
-                              sources: list | None = None) -> None:
-    """Write the answer plus its F2 groundedness badge, citations, and sources to
-    all tiers, scoped to this user, so a cache hit replays the same badge."""
+                              sources: list | None = None,
+                              sentiment: dict | None = None) -> None:
+    """Write the answer plus its F2 groundedness badge, citations, sources, and F4
+    sentiment to all tiers, scoped to this user, so a cache hit replays the same
+    metadata."""
     key = _cache_key(user_id, query)
     ttl = getattr(get_settings(), "cache_ttl_seconds", 3600)
     payload = json.dumps({"answer": answer, "grounded": grounded,
-                          "citations": citations or [], "sources": sources or []})
+                          "citations": citations or [], "sources": sources or [],
+                          "sentiment": sentiment})
 
     _lru.set(key, payload)
     _semantic.set(query, payload, user_id)

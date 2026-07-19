@@ -183,6 +183,7 @@ async def chat_stream(
         cached_grounded = entry.get("grounded")
         cached_citations = entry.get("citations") or []
         cached_sources = entry.get("sources") or []
+        cached_sentiment = entry.get("sentiment")  # F4: replay the badge-less metadata
         metrics.set_field("route", "cache")
         metrics.set_field("cache_hit", True)
         # F-3: persist the exchange so cached turns are not missing from
@@ -196,7 +197,7 @@ async def chat_stream(
         db.save_message(conv_id, "user", message)
         db.save_message(conv_id, "assistant", cached, {
             "sources": cached_sources, "grounded": cached_grounded,
-            "citations": cached_citations, "cached": True,
+            "citations": cached_citations, "sentiment": cached_sentiment, "cached": True,
         })
 
         interaction_id = f"{user_id}-{int(datetime.utcnow().timestamp()*1000)}"
@@ -221,6 +222,8 @@ async def chat_stream(
                 done_data["grounded"] = cached_grounded
             if cached_citations:
                 done_data["citations"] = cached_citations
+            if cached_sentiment:
+                done_data["sentiment"] = cached_sentiment
             yield f"data: {json.dumps({'type': 'done', 'data': done_data})}\n\n"
             if m is not None:
                 yield f"data: {json.dumps({'type': 'metrics', 'data': m.as_dict()})}\n\n"
@@ -254,9 +257,10 @@ async def chat_stream(
     sources: list[dict] = []
     grounded: dict | None = None
     citations: list[dict] = []
+    sentiment: dict | None = None
 
     async def generate():
-        nonlocal final_answer_parts, sources, grounded, citations
+        nonlocal final_answer_parts, sources, grounded, citations, sentiment
         # Re-bind the access token inside the streaming generator so the post-answer
         # DB writes (save_message, log_analytics) carry the user's JWT for RLS,
         # even if the request-context ContextVar does not propagate into the
@@ -280,6 +284,7 @@ async def chat_stream(
                         sources = payload["data"].get("sources", [])
                         grounded = payload["data"].get("grounded")
                         citations = payload["data"].get("citations", [])
+                        sentiment = payload["data"].get("sentiment")
                         payload["data"]["interaction_id"] = interaction_id
                         out = f"data: {json.dumps(payload)}\n\n"
             except Exception:
@@ -292,12 +297,14 @@ async def chat_stream(
         if full_answer:
             db.save_message(conv_id, "assistant", full_answer, {
                 "sources": sources, "grounded": grounded, "citations": citations,
+                "sentiment": sentiment,
             })
-            # F2 persist-and-replay: store the badge + citations with the cache
-            # entry so a future cache hit shows the same groundedness state.
+            # F2/F4 persist-and-replay: store the badge, citations, and sentiment with
+            # the cache entry so a future cache hit shows the same metadata.
             await cache.set_cached_response(
                 user_id, message, full_answer,
                 grounded=grounded, citations=citations, sources=sources,
+                sentiment=sentiment,
             )
             db.log_analytics({
                 "id": interaction_id,

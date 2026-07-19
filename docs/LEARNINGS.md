@@ -1248,3 +1248,72 @@ worker thread, so it does not touch time-to-first-token or block other requests,
 the badge does resolve about a second after the answer finishes. That is the true
 number; memoizing the fixed corpus's source-sentence embeddings would cut it and is a
 logged forward optimization, not a thing to hide.
+
+## Part 19 - Reading feelings: emotion is harder than intent, so bound the harm (Feature F4)
+
+F4 delivers on the product's name (SentioBot = "I feel"): read the user's emotional
+state, adapt the tone, and proactively offer a human when frustration is sustained.
+It reuses the F1 pattern (local ONNX embedding, zero tokens) but the reuse hides the
+lesson: emotion is much HARDER for embeddings than intent, and the design has to bend
+around that.
+
+Why emotion is harder than intent. MiniLM is trained for semantic SIMILARITY, not
+affect. Intents are semantically distinct ("check my order" vs "reset my bulb"), so
+cosine separates them well. Emotions are a thin layer of AFFECT over otherwise similar
+content, and the model is largely blind to it. Two failure modes bit immediately.
+First, POLARITY-BLINDNESS: "it works now, thanks" scored HIGH on the frustrated
+prototypes, purely because it shares the word "work" with "it will not work". The model
+sees the topic, not the sentiment. Second, WEAK SIGNAL: a plain "how do I reset this"
+and a loud "This is AMAZING!!!" both scored a NON-calm emotion around 0.2 to 0.3, barely
+above calm, which is noise. Trusting the top label naively read "AMAZING!!!" as ANGRY
+and would have offered a stranger a human agent for being happy.
+
+The fixes are all about not trusting a weak signal. (1) A confidence GATE: a non-calm
+emotion is believed only if its cosine clears an absolute floor AND beats calm by a
+margin; otherwise the turn is calm. This alone killed the "AMAZING is angry" false read.
+(2) A negative-ONLY lexical booster: the words that actually carry frustration
+("useless", "still not working", profanity, SHOUTING, "!!!"). It fires only on
+negativity, so loud POSITIVE text scores zero, and it can stand alone when the embedding
+misses. (3) A positive/resolved GUARD: a grateful message with no negative cue is forced
+to calm, overriding the polarity-blind embedding, which also lets a frustrated
+conversation DE-ESCALATE the instant the user says it is fixed. The general lesson: when
+your signal is weak and biased in a known direction, encode guards for the specific
+failure modes rather than chasing a higher overall number.
+
+False escalation is the cardinal sin, so accuracy is not the gate. A proactive "want a
+human?" to a calm or happy customer is insulting and erodes trust, the emotion analogue
+of F2's false-green. So the load-bearing number is the FALSE-ESCALATION RATE on
+calm/positive/emphatic-calm/sarcasm controls, and we drove it to 0.000, while the
+overall detection accuracy sits at a modest 0.783 (calm 10/10 and angry 4/4, but
+confused 1/3 and frustrated 3/6). We did NOT chase the accuracy up by fitting the eval;
+we added only canonical negative-affect words a person would list a priori and disclosed
+the rest. A missed frustration just yields the default tone (harmless); a false
+escalation is the failure we refuse. Two design choices make "no false escalation"
+structural, not hoped-for: escalation runs on a SEED-AT-0 EMA that requires DURATION (a
+single spike decays; only sustained frustration accumulates past the threshold), and the
+single-message override is gated on explicit PROFANITY (high precision), never on mere
+emphasis. Emphatic and sarcastic CONTROLS in the labeled set are what proved it.
+
+Guard the exit, again: a test can pass while the behavior fails. The tone instruction
+told the model to "briefly acknowledge the difficulty". The deterministic test (does the
+tone string contain the never-announce clause?) passed. Then the LIVE check caught the
+model opening with "I can see you're frustrated" - announcing the exact emotion the rule
+forbids. The instruction that asked for acknowledgement had invited the announcement.
+This is Part 9 and Part 10 all over again: passing your own test is not the same as being
+correct, and only an OUTPUT check (here, a live read of the generated answer) catches the
+gap. The fix was to make the tone STYLE + ACTION only ("lead with the fix"), which
+conveys care without naming feelings, and to re-verify against the live output. Warmth is
+in the pacing and the priority, not in a sentence that labels the user's mood.
+
+Why sentiment drives tone and the offer but NOT routing. It was tempting to shove a
+frustrated user toward the escalation path. Ratified and correct: do not. A frustrated
+user asking "why won't this stupid thing connect" still needs the DOC troubleshooting
+answer, not to be bounced to a ticket. Routing stays INTENT-driven (F1); sentiment only
+(a) adapts tone and (b) appends a proactive human OFFER on sustained frustration,
+alongside the real answer, never replacing it and never auto-creating a ticket (offer,
+then user consent, then normal routing to the existing tool). Keeping the two signals in
+their lanes, intent decides WHERE, sentiment decides HOW and WHETHER-to-offer, is what
+keeps a bad tone read from turning into a wrong answer. And the whole pass runs AFTER the
+injection guard with its tone sitting below the confidentiality block, so a
+frustrated-toned jailbreak is refused, not coddled: empathy must never become a security
+softening.

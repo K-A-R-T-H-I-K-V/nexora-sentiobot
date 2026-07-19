@@ -1,0 +1,338 @@
+{
+  "test": "F4 sentiment: detection accuracy + NO-FALSE-ESCALATION (free, deterministic, 0 tokens)",
+  "commit": "d2d691990bf4f3a83ae8659d71c9b86a17340965",
+  "as_of": "2026-07-19",
+  "hardware": "Windows 11 (build 10.0.26200) | AMD64 | py3.11.9",
+  "embedding_model": "all-MiniLM-L6-v2 (ONNX Runtime via fastembed)",
+  "config": {
+    "escalation_threshold": 0.52,
+    "ema_alpha": 0.5,
+    "history_turns": 3
+  },
+  "n_messages": 23,
+  "detection_accuracy": 0.7826,
+  "accuracy_by_label": {
+    "calm": "10/10",
+    "confused": "1/3",
+    "frustrated": "3/6",
+    "angry": "4/4"
+  },
+  "no_escalate_controls": 13,
+  "false_escalations": [],
+  "false_escalation_rate": 0.0,
+  "abuse_override_missed": [],
+  "escalation_scenarios": {
+    "rows": [
+      {
+        "id": "esc-sustained-01",
+        "turns": 3,
+        "ema": 0.612,
+        "expect_escalate": true,
+        "got_escalate": true,
+        "ok": true
+      },
+      {
+        "id": "esc-sustained-02",
+        "turns": 3,
+        "ema": 0.713,
+        "expect_escalate": true,
+        "got_escalate": true,
+        "ok": true
+      },
+      {
+        "id": "esc-calm-01",
+        "turns": 2,
+        "ema": 0.0,
+        "expect_escalate": false,
+        "got_escalate": false,
+        "ok": true
+      },
+      {
+        "id": "esc-single-frustrated",
+        "turns": 1,
+        "ema": 0.35,
+        "expect_escalate": false,
+        "got_escalate": false,
+        "ok": true
+      },
+      {
+        "id": "esc-resolved",
+        "turns": 3,
+        "ema": 0.262,
+        "expect_escalate": false,
+        "got_escalate": false,
+        "ok": true
+      },
+      {
+        "id": "esc-abuse-single",
+        "turns": 1,
+        "ema": 0.5,
+        "expect_escalate": true,
+        "got_escalate": true,
+        "ok": true
+      }
+    ],
+    "failures": []
+  },
+  "leakage_guard": {
+    "threshold": 0.9,
+    "max_cosine": 0.5691,
+    "leaks": []
+  },
+  "rows": [
+    {
+      "id": "s-calm-01",
+      "text": "How do I pair the LumiGlow bulb with the mobile app?",
+      "expected": "calm",
+      "got": "calm",
+      "ok": true,
+      "frust": 0.0,
+      "ema": 0.0,
+      "escalate": false,
+      "control": null
+    },
+    {
+      "id": "s-calm-02",
+      "text": "What is the return window for an online order?",
+      "expected": "calm",
+      "got": "calm",
+      "ok": true,
+      "frust": 0.0,
+      "ema": 0.0,
+      "escalate": false,
+      "control": null
+    },
+    {
+      "id": "s-calm-03",
+      "text": "Can you tell me the camera's recording resolution?",
+      "expected": "calm",
+      "got": "calm",
+      "ok": true,
+      "frust": 0.0,
+      "ema": 0.0,
+      "escalate": false,
+      "control": null
+    },
+    {
+      "id": "s-calm-04",
+      "text": "Where do I download the Nexora app for Android?",
+      "expected": "calm",
+      "got": "calm",
+      "ok": true,
+      "frust": 0.0,
+      "ema": 0.0,
+      "escalate": false,
+      "control": null
+    },
+    {
+      "id": "s-calm-05",
+      "text": "my thermostat display is blank, how do I turn it on",
+      "expected": "calm",
+      "got": "calm",
+      "ok": true,
+      "frust": 0.0,
+      "ema": 0.0,
+      "escalate": false,
+      "control": null
+    },
+    {
+      "id": "s-calm-06",
+      "text": "is the outdoor camera okay to install under an eave",
+      "expected": "calm",
+      "got": "calm",
+      "ok": true,
+      "frust": 0.0,
+      "ema": 0.0,
+      "escalate": false,
+      "control": null
+    },
+    {
+      "id": "s-conf-01",
+      "text": "I do not get which wire goes into which terminal on the thermostat",
+      "expected": "confused",
+      "got": "calm",
+      "ok": false,
+      "frust": 0.0,
+      "ema": 0.0,
+      "escalate": false,
+      "control": null
+    },
+    {
+      "id": "s-conf-02",
+      "text": "wait, am I supposed to press the button once or hold it down?",
+      "expected": "confused",
+      "got": "confused",
+      "ok": true,
+      "frust": 0.2,
+      "ema": 0.1,
+      "escalate": false,
+      "control": null
+    },
+    {
+      "id": "s-conf-03",
+      "text": "I am a bit lost, which screen in the app has the reset option?",
+      "expected": "confused",
+      "got": "calm",
+      "ok": false,
+      "frust": 0.0,
+      "ema": 0.0,
+      "escalate": false,
+      "control": null
+    },
+    {
+      "id": "s-frus-01",
+      "text": "I have tried the reset twice and it still will not pair with my phone",
+      "expected": "frustrated",
+      "got": "frustrated",
+      "ok": true,
+      "frust": 0.7,
+      "ema": 0.35,
+      "escalate": false,
+      "control": null
+    },
+    {
+      "id": "s-frus-02",
+      "text": "the camera keeps dropping offline no matter what I do",
+      "expected": "frustrated",
+      "got": "frustrated",
+      "ok": true,
+      "frust": 0.6,
+      "ema": 0.3,
+      "escalate": false,
+      "control": null
+    },
+    {
+      "id": "s-frus-03",
+      "text": "why does the setup keep failing every single time, so annoying",
+      "expected": "frustrated",
+      "got": "angry",
+      "ok": false,
+      "frust": 0.9,
+      "ema": 0.45,
+      "escalate": false,
+      "control": null
+    },
+    {
+      "id": "s-frus-04",
+      "text": "none of your steps helped and I have wasted an hour on this",
+      "expected": "frustrated",
+      "got": "angry",
+      "ok": false,
+      "frust": 1.0,
+      "ema": 0.5,
+      "escalate": false,
+      "control": null
+    },
+    {
+      "id": "s-angry-01",
+      "text": "I am done wasting my whole afternoon on this broken piece of junk",
+      "expected": "angry",
+      "got": "angry",
+      "ok": true,
+      "frust": 1.0,
+      "ema": 0.5,
+      "escalate": false,
+      "control": null
+    },
+    {
+      "id": "s-angry-02",
+      "text": "this is the worst product I have ever bought, a complete ripoff",
+      "expected": "angry",
+      "got": "angry",
+      "ok": true,
+      "frust": 1.0,
+      "ema": 0.5,
+      "escalate": false,
+      "control": null
+    },
+    {
+      "id": "s-angry-03",
+      "text": "absolutely unacceptable, nobody has helped me and I want my money back",
+      "expected": "angry",
+      "got": "angry",
+      "ok": true,
+      "frust": 1.0,
+      "ema": 0.5,
+      "escalate": false,
+      "control": null
+    },
+    {
+      "id": "s-ctrl-emph-01",
+      "text": "This app is FANTASTIC, it works perfectly, thank you so much!!!",
+      "expected": "calm",
+      "got": "calm",
+      "ok": true,
+      "frust": 0.0,
+      "ema": 0.0,
+      "escalate": false,
+      "control": "emphatic_calm"
+    },
+    {
+      "id": "s-ctrl-emph-02",
+      "text": "WOW the new camera is INCREDIBLE, I absolutely love it!!!",
+      "expected": "calm",
+      "got": "calm",
+      "ok": true,
+      "frust": 0.0,
+      "ema": 0.0,
+      "escalate": false,
+      "control": "emphatic_calm"
+    },
+    {
+      "id": "s-ctrl-pos-01",
+      "text": "great, that fixed it, thanks so much for the help",
+      "expected": "calm",
+      "got": "calm",
+      "ok": true,
+      "frust": 0.0,
+      "ema": 0.0,
+      "escalate": false,
+      "control": "positive"
+    },
+    {
+      "id": "s-ctrl-pos-02",
+      "text": "it works now, I really appreciate you walking me through it",
+      "expected": "calm",
+      "got": "calm",
+      "ok": true,
+      "frust": 0.0,
+      "ema": 0.0,
+      "escalate": false,
+      "control": "positive"
+    },
+    {
+      "id": "s-ctrl-sarc-01",
+      "text": "oh fantastic, another update that broke everything again",
+      "expected": "frustrated",
+      "got": "calm",
+      "ok": false,
+      "frust": 0.0,
+      "ema": 0.0,
+      "escalate": false,
+      "control": "sarcasm"
+    },
+    {
+      "id": "s-ctrl-sarc-02",
+      "text": "wow, three hours in and it still does not work, just brilliant",
+      "expected": "frustrated",
+      "got": "frustrated",
+      "ok": true,
+      "frust": 0.7,
+      "ema": 0.35,
+      "escalate": false,
+      "control": "sarcasm"
+    },
+    {
+      "id": "s-abuse-01",
+      "text": "this is fucking useless, you people are hopeless",
+      "expected": "angry",
+      "got": "angry",
+      "ok": true,
+      "frust": 0.95,
+      "ema": 0.475,
+      "escalate": true,
+      "control": null
+    }
+  ],
+  "passed": true
+}

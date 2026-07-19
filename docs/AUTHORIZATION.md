@@ -2,41 +2,86 @@
 
 This document states, explicitly, WHO enforces object-level access control and
 HOW, so it is a deliberate decision rather than tribal knowledge. Added in
-Increment 7 after a BOLA/IDOR sweep.
+Increment 7 (app-layer sweep); upgraded in Increment 10 to a hybrid model where
+the database itself enforces ownership for user-owned data (fail-closed).
 
-## The gatekeeper: application code, not RLS
+## The gatekeeper: hybrid (database RLS + app-layer defense in depth)
 
-The database (`supabase/schema.sql`) defines Row-Level Security policies such as
-"a user can only select their own row". Those policies are **not** the enforcement
-for app traffic, because the backend connects with the **Supabase service-role
-key** (`backend/services/database.py`), and the service role **bypasses RLS by
-design**. A service-role query sees everything.
+There are two clients, used deliberately:
 
-Consequence, and the rule for this codebase:
+- **User-JWT client (RLS enforces).** For the request-path user-owned tables
+  (conversations, messages, analytics), the backend builds a PER-REQUEST Supabase
+  client authed with the caller's JWT (`database._user_db`). The auth token is
+  signed with the **Supabase JWT secret** and carries `role=authenticated` and
+  `sub = public.users.id`, so Postgres **Row-Level Security** filters every query
+  to the caller's own rows. This is **fail-closed**: if a future endpoint forgets
+  its app-level check, the database still denies cross-user access. Policies live
+  in `supabase/migrations/increment10_rls.sql`.
+- **Service-role client (bypasses RLS), used only where it must be.** Pre-auth
+  and system operations that have no user JWT or are not user-scoped: `users`
+  (login lookup and `get_current_user` run before/at auth), `products`/warranty
+  (reference data), and the agent tool path (`orders`, `tickets`), which keeps
+  the Increment 7 `current_user_id` ContextVar check as a documented, tested
+  exception. Rationale: the request-path endpoints get the biggest fail-closed
+  win for the least complexity; threading a JWT through the LangGraph tool nodes
+  is real complexity for marginal benefit on a path that is already app-checked
+  and denial-suite-covered.
 
-> **Every user-scoped resource MUST have its ownership checked in application
-> code, on every endpoint and every tool that takes an object id.** RLS is a
-> backstop and documentation of intent; it enforces nothing while we use the
-> service role.
+## Transition risk (I10-1): the RLS path depends on the LEGACY shared JWT secret
 
-Treating the RLS policies as if they protected app queries is exactly the false
-sense of safety that caused the Increment 7 defects.
+The user-JWT client above signs its tokens with the project's **legacy SHARED HS256
+JWT secret** (`SUPABASE_JWT_SECRET`), because Postgres/PostgREST validates the token
+against that secret. This is a real operational coupling and must be learnable from
+the docs, not tribal knowledge:
+
+- **Do NOT revoke the legacy JWT secret.** Auth depends on it; it still signs the
+  anon/service keys as well.
+- **Do NOT enable asymmetric signing (ES256/RS256 via JWKS) or rotate the secret
+  without updating the app FIRST.** Because `_user_db()` **fails closed**, the moment
+  the database can no longer verify the app's tokens, RLS sees no valid identity and
+  denies **ALL** user-owned data access (a silent, total lockout that looks like a
+  bug, not a security feature) until the app is redeployed with the new signing
+  scheme. The fail-closed default that makes this safe is the same one that makes a
+  secret change dangerous.
+- **Clean long-term fix:** adopt Supabase Auth (or JWKS / asymmetric verification),
+  which removes the shared-secret coupling. Logged as a future increment, not urgent
+  while the deployed system works.
+
+The app-layer checks from Increment 7 (`require_conversation_owner`,
+`require_analytics_owner`, the tool owner checks) are **kept** as defense in
+depth: they give clean 404/403 responses and a second, independent barrier. RLS
+is now the load-bearing control for user-owned data; the app checks are the belt
+on top.
+
+Why the policies use the claim directly: our users live in `public.users`, NOT
+`auth.users` (we do not use Supabase Auth), so `auth.uid()` would never match and
+would deny everything. The policies use `user_id = (auth.jwt() ->> 'sub')::uuid`.
+
+Staged rollout: the user-JWT path activates only when both `SUPABASE_JWT_SECRET`
+and `SUPABASE_ANON_KEY` are set (and the migration applied). Without them the app
+falls back to the Increment 1-9 behaviour (service-role + app-layer checks), so
+the change is safe to deploy before the Supabase side is configured.
 
 ## Where ownership is enforced
 
-| Resource | Enforcement point | Rule |
+| Resource | Enforcement | Rule |
 |---|---|---|
-| Conversations / messages | `main.require_conversation_owner`, called by GET `/chat/conversations/{id}/messages` AND POST `/chat/stream` (conversation_id) | conversation.user_id must equal the caller; 404 if missing, 403 if not owned |
-| Analytics summary | GET `/analytics/summary` | scoped to the caller's own rows (`get_analytics_for_user`); never the whole table |
-| Feedback | POST `/feedback` | the analytics row's user_id must equal the caller; 403 otherwise |
-| Orders | `agent/tools.check_order_status` | order.user_id must equal the caller (`current_user_id`); needs the orders-owner migration to be live (below) |
-| Warranty | `agent/tools.check_warranty_status` | resolved only against the caller's OWN registered products (Increment 6) |
-| Tickets | `agent/tools.create_support_ticket` | always created for the authenticated `current_user_id`, never an LLM-supplied id (Increment 1.6) |
-| Own conversations list / profile | `/chat/conversations`, `/auth/me` | already scoped to the authenticated user |
+| Conversations / messages | **DB RLS (user-JWT client)** + `require_conversation_owner` (defense in depth) | RLS: `user_id = jwt sub` (messages via EXISTS on the parent conversation). App-check: 404 if missing/not owned |
+| Analytics summary | **DB RLS** + scoped query (`get_analytics_for_user`) | RLS returns only the caller's rows; never the whole table |
+| Feedback | **DB RLS** + `require_analytics_owner` | RLS: the row's `user_id = jwt sub`; app-check 404 otherwise |
+| Orders | `agent/tools.check_order_status` (service-role + app-check) | order.user_id must equal the caller (`current_user_id`); orders-owner migration is live |
+| Warranty | `agent/tools.check_warranty_status` (service-role + app-check) | resolved only against the caller's OWN registered products (Increment 6) |
+| Tickets | `agent/tools.create_support_ticket` (service-role) | always created for the authenticated `current_user_id`, never an LLM-supplied id (Increment 1.6) |
+| Own conversations list / profile | `/chat/conversations`, `/auth/me` | scoped to the authenticated user (RLS for conversations) |
 
-Verified by the cross-user denial suite: `backend/scripts/authz_negative_test.py`
-(results/authz_negative_test.json). It asserts, per resource, that user A is
-DENIED user B's object AND that A's own access still works.
+Verified by:
+- the cross-user denial suite `backend/scripts/authz_negative_test.py`
+  (results/authz_negative_test.json): user A is DENIED user B's object and A's own
+  access works, per resource;
+- the **fail-closed proof** `backend/scripts/fail_closed_proof.py`
+  (results/increment10_fail_closed.json): with the app-level check removed from
+  the path, the DB STILL returns none of another user's rows, proving RLS is the
+  enforcement and not the app check masking it.
 
 ## Required migration before public deploy
 
@@ -53,11 +98,12 @@ gated on this.**
 
 ## Deferred (logged, not implied)
 
-- **RLS-with-user-JWT model.** A cleaner long-term option is to stop using the
-  service role for user requests and instead pass the user's JWT to Supabase so
-  the RLS policies do the enforcing. That is a larger change (every query path,
-  plus policies for every table); deferred. Until then, app-layer checks are the
-  single source of truth and must stay consistent.
+- **Extend RLS to the tool path (orders / tickets).** These still use the
+  service-role client with the Increment 7 app-check (a documented exception),
+  because threading the user JWT through the LangGraph tool nodes is real
+  complexity for a path that is already app-checked and denial-suite-covered. A
+  future increment could move it to the user-JWT client for full fail-closed
+  coverage.
 - **Org-wide / admin analytics dashboard.** The old `/analytics/summary` behaviour
   (all users' data) is an admin feature, not a normal-user one. It needs a
   `users.is_admin` flag (another migration) and an admin gate; deferred. Normal

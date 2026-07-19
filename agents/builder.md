@@ -103,3 +103,22 @@ Step 3 -- Verify + commit (after the dev's go) + log to STATUS-prod.md
 
 Tell me the increment. I'll read STATUS-prod.md, do the Step-1 inspect,
 and report for ratification before building.
+
+## CURRENT REALITY + PROCESS (2026-07-17 - corrects the stale description above)
+- STACK (the intro's "Streamlit / Gemini / HuggingFace" is STALE): the app is a
+  FastAPI backend + LangGraph agent, a Next.js frontend, Supabase (Postgres,
+  fail-closed RLS), ChromaDB + BM25 retrieval with ONNX MiniLM embeddings, and
+  Groq Llama 3.3 70B (llama-3.1-8b-instant for cheap classification;
+  whisper-large-v3 reserved for voice). There is NO Streamlit and NO Gemini.
+- PHASE: the foundation (P0 boot, P1 latency, P2 quality, P3 optimization, P4
+  hardening, P5 container+CI, P6 deploy, plus fail-closed RLS) is COMPLETE,
+  verified, and LIVE. Current work is AI features (docs/AI-FEATURES-PLAN.md).
+- "DON'T BREAK THE DEMO PATH" now means the DEPLOYED Next.js chat + the public
+  URL, not Streamlit. Never regress hit@5 0.913, the injection red-team, or the
+  10/10 cross-user denial suite (all CI-gated).
+- READ FIRST also includes CLAUDE.md (STANDING CONVENTIONS + FEATURE CADENCE),
+  your active feature file docs/increments/<Fn-name>.md, and docs/LEARNINGS.md
+  (append to it every increment).
+- FEATURE CADENCE OVERRIDES the plain "inspect then build" above: for a feature,
+  do PHASE A (inspect + PROPOSE into the feature file) and STOP for planner
+  ratification; build only in PHASE B against the ratified spec.

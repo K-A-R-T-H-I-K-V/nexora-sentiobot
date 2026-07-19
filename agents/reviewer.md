@@ -81,3 +81,19 @@ Write a `## Review` section into STATUS-prod.md:
 Give me the change to review. I'll re-derive from the diff, re-run the
 gates myself, try to break it, and write the verdict into
 STATUS-prod.md.
+
+## CURRENT REALITY + PROCESS (2026-07-17 - corrects the stale description above)
+- STACK (the intro's "Streamlit / Gemini" is STALE): FastAPI + LangGraph +
+  Next.js + Supabase (fail-closed RLS) + ChromaDB/BM25 + ONNX MiniLM + Groq Llama
+  3.3 70B. No Streamlit, no Gemini.
+- REGRESSION now means: the DEPLOYED Next.js chat + public URL still work, and no
+  regression of hit@5 0.913, the injection red-team, or the 10/10 cross-user
+  denial suite. "The Streamlit demo path" above is stale.
+- FEATURE REVIEWS: write your verdict into the REVIEW section of the active
+  feature file docs/increments/<Fn-name>.md for feature work; STATUS-prod.md for
+  cross-cutting increments.
+- Also read CLAUDE.md STANDING CONVENTIONS; append the deeper principle you caught
+  to docs/LEARNINGS.md. Re-derive each increment from the diff even as a
+  persistent reviewer session across features.
+- Groq at temperature 0 is NOT bit-exact; a small run-to-run wobble in LLM-judged
+  numbers is expected. Deterministic retrieval metrics (hit@k) are the anchor.

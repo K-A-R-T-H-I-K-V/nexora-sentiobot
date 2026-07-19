@@ -924,3 +924,526 @@ Two habits worth keeping:
   the app un-deployable for free. Constraints (no card, 512MB) are a design input,
   and sometimes the cleanest answer to "where can I host this?" is "make the thing
   small enough to host anywhere."
+
+## Part 16 - Fail-closed, proven: moving authorization into the database (Increment 10)
+
+Increment 7 enforced authorization in application code and verified it 10/10.
+Increment 10 makes it FAIL-CLOSED: the database itself now denies cross-user
+access for user-owned data, so a forgotten app-level check leaks nothing. Part 12
+argued why this is the better foundation; this is building it, and the details are
+where the traps live.
+
+The mechanism. Postgres Row-Level Security (RLS) filters every query by a policy,
+but only if the query runs as a non-privileged role carrying the user's identity.
+We were using the Supabase SERVICE-ROLE key, which bypasses RLS entirely. So the
+move is: for the user-owned tables, run each request through a per-request Supabase
+client authed with the CALLER'S JWT, so their queries hit RLS with their claims.
+Keep the service-role client only where there is no user JWT yet (login, at-auth
+user lookup) or the data is not user-scoped (reference data, the tool path). A
+hybrid, not a rip-and-replace.
+
+Trap 1: the token has to be signed with a secret the database trusts. Our app
+issued its own JWT signed with our own secret. Postgres/PostgREST validates the
+JWT against the SUPABASE JWT secret; a token it cannot verify is simply ignored,
+and RLS then sees no identity and denies everything (or, worse, if you get the
+role wrong, allows everything). Fix: sign the auth token with the Supabase JWT
+secret and include the claims Supabase expects (role=authenticated, aud, and sub =
+the user id). The signing-secret change is invisible in local tests until a real
+RLS query runs, which is exactly why it needs an end-to-end check.
+
+Trap 2: auth.jwt() vs auth.uid(). Supabase policies usually read auth.uid(), which
+returns the id from auth.users (Supabase's own auth table). Our users live in
+public.users; we do not use Supabase Auth. So auth.uid() would never match any
+row and RLS would deny ALL access - a silent, total lockout that looks like a
+bug, not a security feature. The correct policy reads the claim directly:
+user_id = (auth.jwt() ->> 'sub')::uuid. Match the policy to where your identities
+actually live.
+
+Trap 3: fail-closed is a CLAIM until you delete the app check and watch the DB
+hold. It is tempting to enable RLS, keep the app checks, see the denial suite stay
+green, and call it fail-closed. But green could be the app checks doing the work
+while RLS quietly does nothing (wrong role, wrong policy, missing grant). The only
+honest proof is adversarial: REMOVE the app-level check from the path and confirm
+the database STILL returns none of another user's rows. fail_closed_proof.py does
+exactly that - Alice's JWT, the raw query, no app check, zero of Bob's rows. If
+that returns Bob's data, your RLS is decorative. Prove the negative by removing
+the thing that might be masking it.
+
+The transferable lesson: defense in depth means two INDEPENDENT barriers, and you
+only know they are independent if you can knock one down and watch the other hold.
+We kept the app checks as the belt, but we proved the database is the load-bearing
+control by taking the belt off and pulling.
+
+Transition risk, disclosed (I10-1): the same fail-closed property that makes this
+safe also makes an operational change dangerous, and that coupling has to live in the
+docs. The RLS path works because the app signs its tokens with the project's LEGACY
+SHARED HS256 secret, which is what Postgres validates against. So if someone later
+rotates that secret, or switches the project to asymmetric JWKS signing, WITHOUT
+updating the app first, the database can no longer verify the app's tokens, RLS sees
+no identity, and, because the default is to deny, ALL user-owned data access shuts off
+at once: a silent, total lockout that reads like an outage, not a security win. The
+mitigation is not code, it is knowledge: do not revoke the legacy key, do not change
+the signing scheme without a coordinated app deploy, and adopt Supabase Auth / JWKS
+later as the clean fix. The lesson to carry: when a system fails closed, a
+configuration change to its trust anchor is a production incident waiting to happen,
+so the coupling belongs in AUTHORIZATION.md and .env.example where an operator will
+actually read it before flipping the switch. A fail-closed default is a safety
+feature and a footgun, and honesty about which one it is on a given day is the whole
+point.
+
+## Part 17 - From brittle keywords to embeddings: intent-aware routing (Feature F1)
+
+This is the first FEATURE increment (P0 to P6 and RLS are all closed). It is also
+the cleanest small example in the whole project of "measure the thing you are
+replacing, then replace it, then prove the replacement is better on a labeled set."
+
+The flaw. Since day one the request router was one line:
+
+    is_tool_query = any(kw in message.lower()
+        for kw in ["order","warranty","serial","ticket","human","support"])
+
+Present a keyword, take the agent tool path; otherwise take the RAG path. A bag of
+substrings is a terrible model of intent, and it fails in BOTH directions:
+- It OVER-triggers. "What does the warranty policy cover for water damage?" is a
+  general policy question that the RAG path answers perfectly, but the bare word
+  "warranty" shoved it onto the heavier, more expensive agent path. "What are the
+  hours for human customer support?" tripped on "human" and "support".
+- It UNDER-triggers. "My thermostat keeps short-cycling and none of the fixes
+  helped, please escalate this to a person" needs a ticket, but it contains none
+  of the trigger words, so it silently took the RAG path and never escalated.
+
+The concept: embedding intent classification. Instead of matching substrings, we
+represent MEANING. We write a handful of labeled prototype phrases per intent
+(doc_lookup, order_status, warranty, ticket_or_escalation, chitchat,
+out_of_scope), embed them ONCE with the same local ONNX MiniLM model the retriever
+already loads, and at query time embed the user's message and take the cosine
+nearest intent. Two properties make this the right tool here: it costs ZERO extra
+tokens and makes NO LLM call (the embedding model is local and already in memory),
+and it generalizes to phrasings we never enumerated, because "escalate this to a
+person" lands near "I want to speak to a human agent" in embedding space even
+though they share no keyword.
+
+The load-bearing design decision: split "warranty" into policy vs status. The
+kickoff's taxonomy has a single "warranty" intent that routes to the tool. But the
+whole POINT of the feature is to stop mis-routing "what does the warranty cover"
+(a documentation question) while still routing "is MY thermostat under warranty"
+(a status check that needs the tool). So the prototypes encode the distinction:
+warranty-POLICY / coverage / period phrasings live under doc_lookup (RAG);
+warranty-STATUS phrasings ("is my ... still under warranty", "check the warranty
+status for serial SN-...") live under the warranty intent (tool). The measured
+result proved MiniLM separates them cleanly: the three policy questions scored
+0.77 to 0.88 on doc_lookup and clearly below that on warranty, so they route to
+RAG; the status questions scored 0.81 to 0.99 on warranty. The intuition: the
+discriminating words are not "warranty" (shared) but "my / serial / status"
+(status) versus "cover / period / policy" (documentation), and the embedding sees
+that where a keyword cannot.
+
+Confidence threshold plus a safe fallback. A nearest-neighbor classifier will
+always return SOME nearest intent, even for a query that matches nothing well. So
+below a cosine threshold (0.35) we do not trust the guess; we defer to the OLD
+keyword router. This is the same "fail to a known-good default" instinct as
+elsewhere in the codebase: the embedding classifier handles the clear cases
+(including the misroutes keyword gets wrong) and only hands back to keyword when it
+is genuinely unsure, so the change can never do worse than a coin flip on a weird
+input. Only 1 of 28 queries hit the fallback.
+
+The result, and the important correction below. On the ORIGINAL 28-query labeled
+set the embedding router scored 0.929 versus keyword 0.714 (+0.214), fixing 6 of 8
+keyword misroutes. That number was OVER-STATED and a later reviewer caught it: the
+28-item set left out realistic documentation/compatibility questions that contain a
+tool keyword and that the router does NOT fix. After widening the set to 31, the
+HONEST figure is embedding 0.839 versus keyword 0.645 (+0.194), doc_lookup routing
+12/15, and 6 of 11 keyword misroutes corrected. The over-trigger flaw is REDUCED,
+not removed. Full accounting in the F1-R5 correction at the end of this Part; read
+the two original mixed-intent misses below as part of that larger residual story:
+- One is a MIXED-intent message (a troubleshooting complaint AND an escalation
+  request); the troubleshooting content dominates the embedding, so it reads as
+  doc_lookup. A single vector cannot represent "70 percent doc, 30 percent
+  escalate."
+- The other is an indirect escalation where the classifier actually picked the
+  RIGHT intent, but below the confidence threshold, so the conservative fallback
+  sent it to keyword (which got it wrong). That is the precision/recall cost of the
+  threshold, laid bare.
+
+The discipline that matters here: we did NOT patch the misses by adding a prototype
+copied from the failing eval question. That would be teaching to the test, the
+exact sin Part 7 and Increment 5 warn about; it would make the number go up and the
+classifier no better. We left them in the eval as visible misses and wrote them up
+as a disclosed residual. "Here are the ones we do not fix and why" is a stronger,
+more honest claim than a scrubbed perfect score.
+
+Reversible and gated, like every change before it. The old router stays behind a
+config flag (ROUTER=keyword) so the whole thing is one line to roll back and A/B
+forever, exactly as multi-query retrieval was in Increment 4. And the A/B is now a
+CI tripwire: a test asserts the embedding router keeps beating keyword on the
+labeled set and that the core over-trigger cases still route to RAG, so a future
+edit to the prototypes or the threshold that regresses routing fails the build. The
+frozen retrieval gate (hit@5 0.913) still passes untouched, because routing does
+not touch retrieval, which is the honest "do no harm" check for a feature that sits
+upstream of it.
+
+The transferable lesson: when a heuristic is failing, the upgrade is usually to
+represent the thing you actually care about (here, meaning) instead of a proxy for
+it (here, substrings), and the way you EARN the right to ship the upgrade is a
+labeled set that scores both, reported with its failures attached.
+
+### Reviewer note (F1): a "no leakage" claim is itself a claim you must verify
+The build was honest where it counts: it did NOT teach to the test on the two HARD
+misses (r-tik-03/04), and I confirmed that. But the code comment went one step
+further and asserted the prototypes were "deliberately NOT copied from the labeled
+routing eval set" - a categorical claim across ALL items. Diffing the two sets broke
+it: one eval question (r-war-02) is a character-for-character copy of a prototype and
+another (r-oos-01) a trivial reorder (cosine 0.99 and 0.98). The deeper principle:
+the discipline of not fitting prototypes to your FAILING cases can quietly coexist
+with accidental copies among your EASY cases, because the easy ones are where you
+reach for the "obvious" exemplar and the obvious exemplar is the exam question. So a
+leakage claim is not self-evident from good intentions; it is only true if you run
+the diff (normalized string membership + embedding cosine of every eval item against
+every prototype) and it comes back empty. Verify the negative, do not assert it. The
+saving grace here, and the reason this was a P2 and not a P1: the leaked items were
+both already keyword-correct, so pulling them out WIDENS the delta over the baseline
+(+0.214 -> +0.231). Leakage inflated the absolute number, not the comparison that
+carries the feature. Always check which of the two your leak touches before you rank
+the severity.
+
+### Builder response (F1-R1 fix): de-leak by replacement, and why the number did not move
+Fixing this properly taught two things worth keeping.
+
+First, the leak was bigger than the two items the reviewer named. Running the exact
+diff the reviewer prescribed (normalized string membership PLUS embedding cosine of
+every eval question against every prototype) flagged FIVE questions at or above a
+0.90 cosine bar, not two: r-war-02 (0.99, an exact copy), r-oos-01 (0.98), r-doc-03
+(0.92), r-tik-01 (0.91), r-oos-02 (0.91). The two the reviewer caught by eye were the
+near-exact ones; the other three were paraphrase-copies ("I would like to speak to a
+human agent, please" is just the prototype "I want to speak to a human agent" plus
+politeness). Lesson: once you accept you must MEASURE leakage rather than assert it,
+measure it with a threshold, not with your eyes, because your eyes catch the copies
+and miss the paraphrases. All five were replaced with genuinely independent phrasings
+that a real user might type, and the one prototype that carried a concrete seeded
+serial number was generalized so nothing anchors to a specific exam string.
+
+Second, and more importantly, we turned "no leakage" from a code comment into an
+ENFORCED invariant. routing_eval.py now computes every eval question's maximum cosine
+to any prototype (and a normalized string-copy check) and FAILS the eval and CI if
+any item reaches the bar. This is the same move as the frozen-golden-set SHA in
+Increment 4: a property you care about is only real if a machine re-checks it on
+every run. A false honesty-claim in a comment became a test that cannot silently rot.
+
+Now the number at the de-leak step, which is the subtle part (these are the ORIGINAL
+28-item figures, later corrected downward by F1-R5, below; the point here is about
+de-leak mechanics, not the final headline). The de-leak did NOT widen the delta
+to +0.231; it stayed at +0.214 (embedding 0.929, keyword 0.714, unchanged). The
++0.231 the reviewer computed assumed DROPPING the two items (a 26-question set).
+We REPLACED instead (keeping all 28 and full category coverage), and the delta did
+not move because the leaked items were keyword-correct AND embedding-correct filler:
+swapping them for other independent-but-also-correct phrasings changes neither
+router's accuracy. That non-movement is not a disappointment, it is the strongest
+evidence in the whole increment: the classifier scores IDENTICALLY on fresh,
+never-seen phrasings as it did on the (partly memorized) originals, which is exactly
+what "it generalizes rather than memorizes" looks like when you actually test it.
+Both numbers are honest; they measure slightly different sets, and the delta was
+never leak-dependent, because the leak touched the validity of the absolute score,
+not the comparison that carries the feature. The lesson: when you remove a
+measurement artifact and the headline does not move, that is a result, not a null
+result. Report it plainly.
+
+Two residuals were ratified as documented limitations rather than gold-plated: F1-R2,
+non-English queries fall below the English-only prototypes' threshold and fall back
+safely to the keyword router (no crash, possibly the wrong path; the product is
+English-only, so low impact); and F1-R3, the 0.35 confidence threshold sits in a
+noise band (empty input scores ~0.381 and passes, a real indirect escalation scores
+0.302 and defers), so it is documented and left un-tuned rather than overfit to a
+28-item set. Naming a limitation you chose not to fix is part of the honest handoff,
+not an admission of failure.
+
+### Post-close correction (F1-R5): your eval's coverage is your claim's scope
+F1 shipped, was reviewed CLEAN, and closed. Then, while reviewing F2, a fresh
+reviewer probed the router with ordinary phrasings that were NOT in the 28-item eval
+and broke the headline. "do you support HomeKit?" and "can I order replacement
+parts?" are plain documentation questions, but the router scores them below the 0.35
+confidence threshold, and its low-confidence FALLBACK is the legacy keyword router,
+which sees "support"/"order" and sends them to the tool path. That is the exact
+day-one over-trigger F1 exists to remove, re-entering through the back door. And "is
+a cracked screen a warranty thing" is a coverage question the embedder itself
+confidently misroutes to the warranty-STATUS tool (0.564). None of these four were in
+the eval, so the 0.929 and the perfect "12/12 doc_lookup" never saw them.
+
+The fix was disclose-and-widen, not spin. We added the residual phrasings to the eval
+(r-res-01/02/03, still leakage-clean), re-ran, and reported the LOWER honest number:
+embedding 0.839 versus keyword 0.645 (+0.194), doc_lookup 12/15, 6 of 11 keyword
+misroutes fixed. Every place that had said "+0.214 / fixed the day-one flaw" (STATUS,
+this file, the results) was corrected to that number and its scope: the over-trigger
+is REDUCED, not removed. We did NOT re-architect the fallback to force it down,
+because defaulting low-confidence queries to RAG would break the indirect-escalation
+under-trigger fixes the router genuinely earns; that real tension is logged for a
+routing v2, not papered over.
+
+The meta-lesson, and it is the second time this project has taught it (see Part 9):
+an accuracy number only speaks for the DISTRIBUTION you tested it on. Your eval's
+coverage IS your claim's scope. "0.929" was never false; it was true of a 28-item set
+that quietly excluded the cases the feature is weakest on, which made it read as a
+broader claim than it was. The way you find that blind spot is an adversary who
+probes OUTSIDE your curated set, and the honest response is to pull those probes INTO
+the set and restate the number, even when it drops. A metric you can only keep high
+by not testing the hard cases is a story you are telling yourself. Two smaller
+carries recorded as limitations: the low-confidence fallback inherits the keyword
+router's over-trigger (F1-R5), and routing is STATELESS (F1-R6), so it ignores
+chat_history and misroutes multi-turn status follow-ups like "is mine covered?" to
+RAG; both are documented, and a history-aware, better-calibrated router is queued as
+routing v2 rather than rushed here.
+
+## Part 18 - The trust feature: show the evidence, do not claim the verdict (Feature F2)
+
+F2 is the "trust" feature: after a documentation answer, show whether it is actually
+supported by the retrieved sources (a badge) and show the exact source sentence
+behind each claim (inline citations). It is the increment where the DESIGN of the
+honesty matters more than the code, and it turns on three ideas.
+
+Extraction beats generation for citations. There are two ways to show "the source
+behind this claim". Generate it: ask the model to quote the supporting span. Or
+extract it: match the answer's claims to the retrieved source sentences locally and
+show the matched sentence verbatim. Generation can HALLUCINATE a quote that is not
+in the source, which is the worst possible failure for a trust feature (a fake
+citation is more dangerous than no citation). Extraction cannot: every span is a
+literal slice of the retrieved text, and a one-line test asserts every emitted span
+is a substring of a source, so a hallucinated quote is structurally impossible, not
+just unlikely. When the whole point is trust, prefer the mechanism whose guarantee
+is structural over the one that merely usually works.
+
+Topical overlap is not entailment, so the badge must not overclaim. The groundedness
+score is a local, zero-token cosine match between each claim and the source
+sentences (the same ONNX MiniLM the retriever, cache, and F1 router already load).
+That is cheap and reproducible, but it measures TOPICAL similarity, not logical
+entailment. A claim "the warranty lasts three years" is embedding-similar to a
+source saying "two years"; a negation ("does not cover") sits close to its opposite.
+So the badge is worded to claim only what the method can support: it says each claim
+MATCHES a retrieved passage, never "verified" or "correct", and it SHOWS that passage
+so the human makes the final call. The shown source sentence is the real backstop to
+the score's weakness. The design lesson generalizes past chatbots: when your signal
+is a cheap proxy, state exactly what the proxy measures and put the ground truth in
+front of the user, rather than dressing the proxy up as the verdict.
+
+No false green comes from a conservative label plus real claims. The badge is
+3-state: grounded only if EVERY factual claim matches a source above the threshold;
+partial if some do (a soft-withhold: show the answer, flag it, show the citations);
+unverified if none do or there is no context. Requiring ALL claims to match is what
+makes a false green hard: one unmatched claim drops it to partial. The subtle part
+was defining "claim" well. Naively splitting the answer into sentences produced junk
+"claims": markdown headers, list-item fragments ("in its original packaging"), and
+citation-apparatus preambles ("According to (visionsphere360manual.md | 3."). Those
+are not facts, they never match source prose, and they were sinking good answers to
+"partial". Filtering them out (drop headers, colon lead-ins, filename references,
+pleasantries) let genuinely grounded answers read grounded WITHOUT lowering the
+threshold, which would have risked a false green. The insight: the quality of a
+support check is bounded by the quality of your claim extraction; garbage claims make
+a good answer look ungrounded, and loosening the threshold to compensate is how you
+accidentally ship a false green.
+
+Validate the label before you ship it (and read the answer when the metric argues).
+The planner's rule was: do not pre-commit the wording or threshold, validate the
+local label against 8B RAGAS faithfulness on the frozen golden set first. We reused
+the five human-verified answers committed in Increment 4 (each carries the real
+answer AND the 8B faithfulness), ran the local pass, and compared. Local greened the
+two answers RAGAS also scored high, and, tellingly, greened doc-12 which RAGAS scored
+0.0. Following the Increment 4 discipline we READ doc-12: "the camera is
+weather-resistant (IP65), not fully waterproof, should not be submerged, install in a
+sheltered spot" is exactly what the manual says. The answer is grounded; the weak 8B
+judge cried wolf again, the same failure mode Part 7 documented. So local marking it
+grounded is local being RIGHT where the noisy judge is wrong, not a false green. The
+lesson, twice learned now: a disagreement between a cheap signal and a noisy judge is
+not automatically the cheap signal's fault; resolve it by reading the artifact, and
+let the deterministic property (the synthetic poison test, where an injected
+unsupported claim must never stay green) carry the safety guarantee instead of the
+judge. Committed threshold: 0.5, earned by that validation, not guessed.
+
+Two smaller carries. Persist-and-replay: the badge and citations are stored in the
+message metadata AND with the cache entry, so a cache hit and a page reload show the
+SAME badge as the live answer; a trust signal that flickers or disappears on reload
+is worse than none. And honesty about latency: the local pass costs ~0.8 to 1 second
+of CPU embedding on this hardware. It runs AFTER the answer has streamed and in a
+worker thread, so it does not touch time-to-first-token or block other requests, but
+the badge does resolve about a second after the answer finishes. That is the true
+number; memoizing the fixed corpus's source-sentence embeddings would cut it and is a
+logged forward optimization, not a thing to hide.
+
+## Part 19 - Reading feelings: emotion is harder than intent, so bound the harm (Feature F4)
+
+F4 delivers on the product's name (SentioBot = "I feel"): read the user's emotional
+state, adapt the tone, and proactively offer a human when frustration is sustained.
+It reuses the F1 pattern (local ONNX embedding, zero tokens) but the reuse hides the
+lesson: emotion is much HARDER for embeddings than intent, and the design has to bend
+around that.
+
+Why emotion is harder than intent. MiniLM is trained for semantic SIMILARITY, not
+affect. Intents are semantically distinct ("check my order" vs "reset my bulb"), so
+cosine separates them well. Emotions are a thin layer of AFFECT over otherwise similar
+content, and the model is largely blind to it. Two failure modes bit immediately.
+First, POLARITY-BLINDNESS: "it works now, thanks" scored HIGH on the frustrated
+prototypes, purely because it shares the word "work" with "it will not work". The model
+sees the topic, not the sentiment. Second, WEAK SIGNAL: a plain "how do I reset this"
+and a loud "This is AMAZING!!!" both scored a NON-calm emotion around 0.2 to 0.3, barely
+above calm, which is noise. Trusting the top label naively read "AMAZING!!!" as ANGRY
+and would have offered a stranger a human agent for being happy.
+
+The fixes are all about not trusting a weak signal. (1) A confidence GATE: a non-calm
+emotion is believed only if its cosine clears an absolute floor AND beats calm by a
+margin; otherwise the turn is calm. This alone killed the "AMAZING is angry" false read.
+(2) A negative-ONLY lexical booster: the words that actually carry frustration
+("useless", "still not working", profanity, SHOUTING, "!!!"). It fires only on
+negativity, so loud POSITIVE text scores zero, and it can stand alone when the embedding
+misses. (3) A positive/resolved GUARD: a grateful message with no negative cue is forced
+to calm, overriding the polarity-blind embedding, which also lets a frustrated
+conversation DE-ESCALATE the instant the user says it is fixed. The general lesson: when
+your signal is weak and biased in a known direction, encode guards for the specific
+failure modes rather than chasing a higher overall number.
+
+False escalation is the cardinal sin, so accuracy is not the gate. A proactive "want a
+human?" to a calm or happy customer is insulting and erodes trust, the emotion analogue
+of F2's false-green. So the load-bearing number is the FALSE-ESCALATION RATE on
+calm/positive/emphatic-calm/sarcasm controls, and we drove it to 0.000, while the
+overall detection accuracy sits at a modest 0.783 (calm 10/10 and angry 4/4, but
+confused 1/3 and frustrated 3/6). We did NOT chase the accuracy up by fitting the eval;
+we added only canonical negative-affect words a person would list a priori and disclosed
+the rest. A missed frustration just yields the default tone (harmless); a false
+escalation is the failure we refuse. Two design choices make "no false escalation"
+structural, not hoped-for: escalation runs on a SEED-AT-0 EMA that requires DURATION (a
+single spike decays; only sustained frustration accumulates past the threshold), and the
+single-message override is gated on explicit PROFANITY (high precision), never on mere
+emphasis. Emphatic and sarcastic CONTROLS in the labeled set are what proved it.
+
+Guard the exit, again: a test can pass while the behavior fails. The tone instruction
+told the model to "briefly acknowledge the difficulty". The deterministic test (does the
+tone string contain the never-announce clause?) passed. Then the LIVE check caught the
+model opening with "I can see you're frustrated" - announcing the exact emotion the rule
+forbids. The instruction that asked for acknowledgement had invited the announcement.
+This is Part 9 and Part 10 all over again: passing your own test is not the same as being
+correct, and only an OUTPUT check (here, a live read of the generated answer) catches the
+gap. The fix was to make the tone STYLE + ACTION only ("lead with the fix"), which
+conveys care without naming feelings, and to re-verify against the live output. Warmth is
+in the pacing and the priority, not in a sentence that labels the user's mood.
+
+Why sentiment drives tone and the offer but NOT routing. It was tempting to shove a
+frustrated user toward the escalation path. Ratified and correct: do not. A frustrated
+user asking "why won't this stupid thing connect" still needs the DOC troubleshooting
+answer, not to be bounced to a ticket. Routing stays INTENT-driven (F1); sentiment only
+(a) adapts tone and (b) appends a proactive human OFFER on sustained frustration,
+alongside the real answer, never replacing it and never auto-creating a ticket (offer,
+then user consent, then normal routing to the existing tool). Keeping the two signals in
+their lanes, intent decides WHERE, sentiment decides HOW and WHETHER-to-offer, is what
+keeps a bad tone read from turning into a wrong answer. And the whole pass runs AFTER the
+injection guard with its tone sitting below the confidentiality block, so a
+frustrated-toned jailbreak is refused, not coddled: empathy must never become a security
+softening.
+
+## Part 20 - A safety gate is only as wide as its hard cases (F2-R1, F4-R1, convention 10)
+
+Two small hardening passes taught the same lesson from opposite ends, and it is now a
+standing convention: a "no false X" gate that only tests the OBVIOUS case is not the
+property, it is a green light with a blind spot.
+
+F2-R1: the denominator is part of the property. F2's "no false green" rests on counting
+every factual claim and requiring all of them to match a source. But claim SELECTION had
+two escape hatches. A short unsupported clause ("Ships worldwide free.", 3 words) fell
+under a 25-character floor and was dropped from the count, so it could not downgrade the
+label. And a hedged fabrication ("Of course it also includes a free speaker.") tripped a
+non-factual filter that listed "of course" as filler, so the whole sentence, fabrication
+and all, was discarded. Both left a poisoned answer labeled GROUNDED. The committed poison
+test only injected a LONG off-topic sentence, the easy case, so CI was green while the
+property failed for the short and hedged phrasings a real LLM emits constantly. The fix
+was to stop excluding claims by LENGTH (floors dropped to 12 chars / 3 words; non-claims
+are excluded by KIND: question, lead-in, citation-apparatus, pure pleasantry) and to
+STRIP a hedge opener rather than discard the sentence behind it, so "of course X" is
+judged on X. The transferable point: when a safety check aggregates over a set, HOW you
+choose the set is as load-bearing as the check itself. A filter you added to reduce noise
+(the length floor, added in F2 to stop list-fragment false-ambers) can quietly become the
+hole an adversary walks through. Test the selection, not just the scoring.
+
+A disclosed residual, because you cannot fix everything and pretending you did is worse
+(F2-R3). The length floor did not vanish; it shrank to 12 chars / 3 words. So a genuinely
+short unsupported claim, "Fully waterproof." or "Free shipping." (2 words), still slips
+the count and can leave a false green. We deliberately did NOT chase the floor to 1 word:
+below three words the false-amber rate on real short fragments (bullet items, "2.4 GHz
+only") climbs, and you would trade a rare evasion for a common annoyance, a bad deal. The
+Convention-10 rule has a second branch for exactly this, "or NARROW the claim to what
+actually holds", and this is when you take it: the honest headline is "no false green for
+realistic 3-plus-word or hedged claims", with the <=2-word boundary written into the
+module note and here, not buried. Knowing when to keep widening the net and when to state
+the edge of it is its own skill; a limitation you disclose is a boundary, a limitation you
+hide is a lie waiting to be found.
+
+F4-R1: when safety rests on a numeric margin, pin the margin. F4's "a single angry message
+does not escalate" holds because a seed-at-0 EMA of one turn is alpha times the score, and
+alpha (0.5) times a maxed 1.0 is 0.5, just under the 0.52 threshold. That is 0.02 of
+headroom, entirely implicit in two config numbers a future retune could nudge without
+anyone noticing the property broke. So we pinned it with a named test that asserts the
+invariant directly (alpha * 1.0 < threshold) AND end-to-end (a maxed single turn reads
+0.9+ but does not escalate), plus its paired opposite (two frustrated turns DO escalate).
+Now a retune that would silently start escalating spikes, or go deaf to sustained
+frustration, fails the build. The lesson: a safety boundary that lives in a couple of
+constants is one careless edit from gone; write the test that makes the constants
+accountable to the property.
+
+The meta-lesson, now Standing Convention 10. This class has recurred: F1-R5 (the routing
+eval omitted the over-trigger phrasings the router fails), F2-R1 (the poison set omitted
+the short and hedged claims the filter drops). Each time, the gate passed on the case we
+thought of and failed on the case an ordinary user hits. So the rule is explicit now: any
+no-false-X gate must test the HARD cases, short, hedged, boundary, adversarial, and you
+widen the poison/negative set until the property holds under probing, or you narrow the
+claim to exactly what holds. A green gate on the easy case is not the property. The way you
+find the blind spot is the same every time, an adversary (here a fresh reviewer) probing
+outside your curated set; the discipline is to pull those probes IN as permanent tests and
+report the honest, sometimes narrower, truth.
+
+## Part 21 - Resolve before you ask: proactivity beats interrogation (Feature F5)
+
+F5 is the feature that separates a conversation from a form. When a query is missing a
+detail (which order? which product?), the naive move is to ask. The better move is to
+try to already KNOW: resolve the missing slot from the message, then the user's profile,
+then the conversation, and ask ONE targeted question only if it is still genuinely
+unknowable. A support agent who makes you re-type your order number when you just gave it
+is worse than one who quietly remembers.
+
+The order-vs-warranty asymmetry is the whole design. The two slot-bearing intents are not
+symmetric, and reading the CODE (not the vibe) is what revealed it. Warranty is usually
+answerable without asking: check_warranty_status resolves a product NAME against the
+user's owned_products, so "is my thermostat under warranty" needs no serial (the profile
+has it), and "is my product under warranty" from someone who owns exactly one thing is
+fully determined. Orders are the opposite: the only lookup is by explicit id, there is no
+per-user order list, so "check my order status" with no id anywhere genuinely cannot be
+resolved and MUST ask. Same feature, opposite defaults, and you only know which is which
+by tracing what the tools can actually do. The lesson: a "clarify" feature is really a
+"resolve" feature; how much you can resolve is a property of your data model, not your
+prompt.
+
+Make the DECISION deterministic, template only the WORDING. The safety property here is
+NO OVER-ASK, and it is the fourth "no false X" gate in a row (no-false-green,
+no-false-escalation, no-false-green-again, now no-over-ask). Per Convention 10 it has to
+be provable on the HARD cases: queries that LOOK ambiguous but are resolvable ("is my
+thermostat under warranty" with a thermostat owned; an order id sitting in a previous
+user turn). A property is only provable if the thing under test is deterministic, so the
+ask/don't-ask DECISION is a pure zero-token function of (message, profile, history), and
+only the QUESTION wording is a context-aware template (it names the product, warms up for
+a frustrated user). The model never decides whether to ask. Result: over-ask 0.000,
+decision accuracy 1.000 on the labeled set, including the profile- and history-resolvable
+buckets that are the entire point.
+
+The bug that taught the deepest lesson: watch what you search over. The first version
+resolved an order id from the whole recent history, including the ASSISTANT's turns. But
+the clarify question itself contains an EXAMPLE id ("for example, NX-2025-301"), which is
+also a REAL order. So the very next turn, the resolver found "NX-2025-301" in the bot's
+own question and "resolved" the user's vague follow-up to a stranger's order, which the
+tool would then have looked up. A helpfulness feature became a cross-user data-exposure
+path through its own example text. The fix was one line, search only USER turns, but the
+principle is sharp: when you scan conversation history for a value, be precise about WHOSE
+words you are trusting. Your own outputs are not user input, and treating them as such can
+turn a convenience into a leak. An id the bot legitimately knows always originated from
+the user anyway, so user-turns-only loses nothing and closes the hole.
+
+Two smaller carries. Clarify DEFERS to an active F4 escalation: a sustainedly-frustrated
+user who is already being offered a human is not then hit with a bureaucratic form
+question; the escalation stands and the clarify yields. Features that both want to speak
+on the same turn need an explicit priority, and "the human offer wins over the form" is the
+humane one. And privacy rides in the wording: the resolver reads serials server-side to
+DECIDE, but the question it asks names products only, never a serial the user did not
+themselves provide, the same server-side-knowledge-without-client-exposure discipline as
+the system prompt's product-name-only rule.

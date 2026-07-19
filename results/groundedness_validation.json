@@ -1,0 +1,85 @@
+{
+  "test": "F2 groundedness validation: local label vs RAGAS faithfulness + no-false-green (0 tokens)",
+  "commit": "ff70bd5e4abd3331e9dfc4922f48e8d65773fcfe",
+  "as_of": "2026-07-19",
+  "hardware": "Windows 11 (build 10.0.26200) | AMD64 | py3.11.9",
+  "embedding_model": "all-MiniLM-L6-v2 (ONNX Runtime via fastembed)",
+  "threshold": 0.5,
+  "source": "increment4_delta.json (human-verified real answers + committed 8B RAGAS faithfulness)",
+  "n": 5,
+  "no_false_green_synthetic": {
+    "poisoned_answers_that_stayed_grounded": [],
+    "passed": true
+  },
+  "local_vs_ragas_disagreements": [
+    {
+      "id": "doc-12",
+      "local": "grounded",
+      "ragas_faithfulness": 0.0,
+      "note": "local grounded but weak-judge faithfulness low; read the answer"
+    }
+  ],
+  "rows": [
+    {
+      "id": "doc-03",
+      "question": "What is the wattage and rated lifespan of the LumiGlow bulb?",
+      "local_label": "grounded",
+      "local_score": 1.0,
+      "supported": 1,
+      "total": 1,
+      "ragas_faithfulness": 1.0,
+      "citations": 1,
+      "poisoned_label": "partial",
+      "local_vs_ragas_disagree": false
+    },
+    {
+      "id": "doc-09",
+      "question": "What input voltage does the Thermostat Pro require?",
+      "local_label": "grounded",
+      "local_score": 1.0,
+      "supported": 1,
+      "total": 1,
+      "ragas_faithfulness": 0.8,
+      "citations": 1,
+      "poisoned_label": "partial",
+      "local_vs_ragas_disagree": false
+    },
+    {
+      "id": "doc-12",
+      "question": "Is the SecureSphere 360 camera fully waterproof?",
+      "local_label": "grounded",
+      "local_score": 1.0,
+      "supported": 3,
+      "total": 3,
+      "ragas_faithfulness": 0.0,
+      "citations": 3,
+      "poisoned_label": "partial",
+      "local_vs_ragas_disagree": true
+    },
+    {
+      "id": "pol-02",
+      "question": "Does the warranty policy cover water or flood damage?",
+      "local_label": "partial",
+      "local_score": 0.75,
+      "supported": 3,
+      "total": 4,
+      "ragas_faithfulness": 0.0,
+      "citations": 2,
+      "poisoned_label": "partial",
+      "local_vs_ragas_disagree": false
+    },
+    {
+      "id": "pol-03",
+      "question": "What is Nexora's return window and the condition for a full refund?",
+      "local_label": "partial",
+      "local_score": 0.75,
+      "supported": 3,
+      "total": 4,
+      "ragas_faithfulness": 0.95,
+      "citations": 3,
+      "poisoned_label": "partial",
+      "local_vs_ragas_disagree": false
+    }
+  ],
+  "passed": true
+}

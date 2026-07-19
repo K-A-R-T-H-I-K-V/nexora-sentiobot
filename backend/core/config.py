@@ -66,6 +66,71 @@ class Settings(BaseSettings):
     supabase_url: str = ""
     supabase_anon_key: str = ""
     supabase_service_role_key: str = ""
+    # Increment 10 (RLS-with-JWT): the project's JWT secret (Supabase dashboard ->
+    # Settings -> API -> JWT Secret). When this AND supabase_anon_key are set, the
+    # app signs auth tokens with it and routes user-owned data through a
+    # per-request user-JWT client so Postgres RLS enforces ownership (fail-closed).
+    # If unset, the app falls back to the Increment 1-9 behaviour (own jwt_secret +
+    # service-role client + app-layer checks), so this is a safe, staged rollout.
+    supabase_jwt_secret: str = ""
+
+    @property
+    def rls_enabled(self) -> bool:
+        """True when both Supabase secrets needed for the user-JWT RLS path are set."""
+        return bool(self.supabase_jwt_secret and self.supabase_anon_key)
+
+    @property
+    def auth_signing_secret(self) -> str:
+        """Sign/verify auth tokens with the Supabase JWT secret when available (so
+        Postgres RLS accepts them), else the app's own jwt_secret (legacy)."""
+        return self.supabase_jwt_secret or self.jwt_secret
+
+    # --- Routing (Feature F1: intent-aware routing) ---
+    # "embedding" = local ONNX MiniLM intent classifier (adds no LLM call, ~0
+    # tokens on the hot path); "keyword" = the legacy any(keyword in message)
+    # router. Kept selectable so the classifier is reversible and A/B-able.
+    router: str = "embedding"
+    # Below this cosine confidence the embedding classifier defers to the keyword
+    # router (a safe, known-behaviour fallback) rather than guess on a weak match.
+    intent_confidence_threshold: float = 0.35
+
+    # --- Groundedness + citations (Feature F2) ---
+    # Local, zero-token check: after a DOC answer, cosine-match each factual claim
+    # to the retrieved source sentences and extract the supporting span. Emits a
+    # 3-state badge (grounded/partial/unverified) + citations on the done event.
+    groundedness_enabled: bool = True
+    # Per-claim cosine cutoff for "supported". CALIBRATED on real answers + the
+    # RAGAS validation (see backend/scripts/groundedness_validation.py), not
+    # hand-fit to one example. "grounded" requires EVERY claim above this.
+    groundedness_threshold: float = 0.5
+    groundedness_max_citations: int = 6
+    groundedness_span_max_chars: int = 240
+    groundedness_max_source_sentences: int = 120  # bound the embed batch
+    # 8B NLI escalation for the topical-overlap-vs-entailment weakness. OFF by
+    # default (adds tokens); the documented mitigation, not the shipped path.
+    groundedness_nli: bool = False
+
+    # --- Sentiment / frustration awareness (Feature F4) ---
+    # Local, zero-token: cosine-match the message to emotion prototypes (sharing the
+    # F1 router's embedding) + a negative-only lexical booster. Drives a tone
+    # instruction and, on SUSTAINED frustration, a proactive human offer. Never biases
+    # routing; never announces the emotion.
+    sentiment_enabled: bool = True
+    sentiment_history_turns: int = 3        # user turns (incl. current) for the EMA
+    sentiment_ema_alpha: float = 0.5        # recency weight; seed-at-0 needs duration
+    # CALIBRATED by validation (no-false-escalation on calm/controls is load-bearing).
+    # A single spike stays below this (seed-at-0 EMA needs duration); only sustained
+    # frustration crosses it. A profanity-only single-message override handles abuse.
+    sentiment_escalation_threshold: float = 0.52  # EMA above this -> offer a human
+    # 8B escalation-decision check (only makes escalate MORE conservative). Off by
+    # default (adds tokens on the hot path of every message).
+    sentiment_nli: bool = False
+
+    # --- Clarify-before-answering (Feature F5) ---
+    # Deterministic, zero-token pre-check: for order_status / warranty, resolve the
+    # missing slot from message -> profile -> history, and ask ONE templated question
+    # only if still unknown. Never over-asks when the profile/history already answers.
+    clarify_enabled: bool = True
 
     # --- Retrieval ---
     # Increment 4: base ensemble (BM25 + vector) is the default. The multi-query

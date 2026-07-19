@@ -21,6 +21,7 @@ from pydantic import BaseModel
 
 import backend.services.database as db
 from backend.core.config import get_settings
+from backend.core.request_context import current_access_token
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
@@ -60,7 +61,13 @@ def create_access_token(data: dict) -> str:
     s = get_settings()
     payload = data.copy()
     payload["exp"] = datetime.now(timezone.utc) + timedelta(minutes=s.jwt_expire_minutes)
-    return jwt.encode(payload, s.jwt_secret, algorithm=s.jwt_algorithm)
+    # Increment 10: include the claims Postgres RLS expects (role/aud) and sign
+    # with the Supabase JWT secret when configured, so a per-request user-JWT
+    # client is accepted by RLS. Falls back to the app's own jwt_secret in legacy
+    # mode; the extra claims are harmless there. `sub` is public.users.id.
+    payload.setdefault("role", "authenticated")
+    payload.setdefault("aud", "authenticated")
+    return jwt.encode(payload, s.auth_signing_secret, algorithm=s.jwt_algorithm)
 
 
 async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)]) -> dict:
@@ -71,7 +78,13 @@ async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)]) -> dic
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:
-        payload = jwt.decode(token, s.jwt_secret, algorithms=[s.jwt_algorithm])
+        # verify_aud False: we only need `sub`; Supabase RLS validates the token
+        # itself. This also decodes both legacy tokens (no aud) and Increment 10
+        # tokens (aud=authenticated) with the same call.
+        payload = jwt.decode(
+            token, s.auth_signing_secret,
+            algorithms=[s.jwt_algorithm], options={"verify_aud": False},
+        )
         user_id: str | None = payload.get("sub")
         if user_id is None:
             raise credentials_exc
@@ -81,6 +94,9 @@ async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)]) -> dic
     user = db.get_user_by_id(user_id)
     if user is None:
         raise credentials_exc
+    # Increment 10: expose the raw token so user-owned DB queries can run through
+    # a per-request user-JWT client (RLS enforcement).
+    current_access_token.set(token)
     return user
 
 

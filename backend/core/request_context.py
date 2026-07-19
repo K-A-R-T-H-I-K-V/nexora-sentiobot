@@ -18,3 +18,10 @@ current_user_id: ContextVar[str] = ContextVar("sentiobot_current_user_id", defau
 current_user_products: ContextVar[list] = ContextVar(
     "sentiobot_current_user_products", default=[]
 )
+
+# The authenticated user's raw access token (JWT). Set per request from the
+# Authorization header so user-owned DB queries can run through a per-request
+# user-JWT Supabase client, letting Postgres RLS enforce ownership (Increment 10).
+current_access_token: ContextVar[str] = ContextVar(
+    "sentiobot_current_access_token", default=""
+)

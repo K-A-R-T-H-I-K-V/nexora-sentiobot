@@ -32,9 +32,10 @@ def test_embedding_beats_keyword(report):
 
 
 def test_embedding_accuracy_floor(report):
-    # Well below the observed 0.929, leaving headroom, but catches a real
-    # regression (a broken prototype set or route map).
-    assert report["embedding_accuracy"] >= 0.85, report["embedding_accuracy"]
+    # Below the observed honest accuracy (F1-R5 widened the eval with residual
+    # over-trigger cases the router does NOT fix, so the number dropped from 0.929
+    # to ~0.839), leaving headroom, but catches a real regression.
+    assert report["embedding_accuracy"] >= 0.78, report["embedding_accuracy"]
 
 
 def test_gate_items_route_correctly(report):

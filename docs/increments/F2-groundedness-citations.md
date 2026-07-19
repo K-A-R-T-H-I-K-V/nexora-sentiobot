@@ -495,3 +495,44 @@ Fixed the PROPERTY (convention 10: hold on the hard cases), not the wording.
   floors were not binding on real full-sentence claims. Full suite 42 passed.
 - F2-R2 (wrong-number/negation greens) remains the DISCLOSED entailment tradeoff, not
   touched here (the badge wording already disclaims correctness and shows the source).
+
+### F2-R1 FIX VERIFIED (fresh reviewer, 2026-07-20) - closed, with a narrow residual
+Re-derived and re-ran, did not trust the write-up.
+- The two vectors I filed are closed: "...two years [Source 1]. Ships worldwide free."
+  and "...[Source 1]. Of course it also includes a free smart speaker." both now drop
+  to PARTIAL. The hedge-prefix strip and the 3-word/12-char floor do the work; the two
+  new regression tests genuinely assert != grounded.
+- No regression from the lower floors: my re-run of groundedness_validation is
+  label-identical to committed (doc-03/09/12 grounded, pol-02/03 partial); the lower
+  floor did not false-amber any real full-sentence answer. Full suite 42 passed. Fix
+  commit re-stamped on the validation file.
+- Logic scope confirmed: ff70bd5 touched only groundedness.py + the two test files.
+- RESIDUAL [P3, new, non-blocking]: the floor is lower but not zero, so a <=2-word
+  unsupported factual claim still evades and stays GREEN. Reproduced: "...two years
+  [Source 1]. Fully waterproof." and "...[Source 1]. Free shipping." both label
+  grounded (the 2-word clause is under the 3-word floor, dropped from the count). This
+  is the same F1-R5 -> F2-R1 pattern one floor down, and there is a real tension (going
+  to 1-2 words risks false-ambering genuine short fragments), so it is a scope note, not
+  a reject: either document the <=2-word residual as a known limitation, or special-case
+  a very-short claim whose content words appear in no source. The in-code comment
+  "excluded by KIND ... not by length" slightly overstates - a length floor remains.
+  VERDICT: F2-R1 is substantially closed and well-tested; the remaining <=2-word case is
+  a documented-limitation-grade residual.
+
+---
+
+## F2-R1 CLOSED + F2-R3 residual disclosed (planner, 2026-07-17)
+F2-R1 fixed the PROPERTY not the wording (floors 25->12 char / 4->3 word; hedge
+openers stripped as a prefix; "of course"/"sure thing" removed from the pleasantry
+filter). Two named regression tests (short + hedged) that failed before now pass;
+no real-answer regression (validation label-identical, re-stamped); 42 tests pass.
+F2-R3 [P3] residual: a <=2-word unsupported factual claim ("Fully waterproof.",
+"Free shipping.") still evades. RULING: do NOT chase the floor lower - diminishing
+returns, and each lower floor risks false-ambering real short fragments (a genuine
+tension). Per Convention 10's "narrow the claim to what actually holds" branch:
+DISCLOSE the <=2-word residual as a documented limitation (LEARNINGS + the badge
+limitations note) and CORRECT the overstated in-code comment ("excluded by KIND not
+by length" - a length floor does remain). One small commit. F2 is then CLOSED
+honestly: "no false green" holds for realistic (3+ word / hedged) claims, with the
+<=2-word boundary stated, not hidden. Knowing when to disclose vs gold-plate is the
+call here.

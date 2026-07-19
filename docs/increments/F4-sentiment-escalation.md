@@ -443,3 +443,12 @@ start escalating spikes:
 - test_sustained_frustration_does_escalate pins the paired invariant (two frustrated
   turns DO cross the threshold), so the fix cannot make the router deaf to real
   sustained frustration either. Full suite 42 passed.
+
+### F4-R1 FIX VERIFIED (fresh reviewer, 2026-07-20) - closed
+ff70bd5 touched sentiment.py NOT AT ALL (tests-only), so the F4 behaviour I verified in
+the prior REVIEW is unchanged; this only adds accountability. Both new tests pass: the
+single-spike test asserts the arithmetic invariant (alpha*1.0 < threshold) AND proves it
+end-to-end (a maxed non-profane single turn reads score >= 0.9 but does not escalate),
+and the paired test pins that sustained frustration still escalates. The razor-thin
+margin I flagged (0.500 vs 0.520) is now guarded in both directions, so a future retune
+of alpha or the threshold fails the build. F4-R1 CLOSED, no residual.

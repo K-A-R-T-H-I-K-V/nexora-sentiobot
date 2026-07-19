@@ -1,6 +1,6 @@
 {
   "test": "F5 clarify: NO OVER-ASK on resolvable/hard cases + correct-ask (0 tokens)",
-  "commit": "536539ef4c297ae2d17c1eda06e00a5a940a2eb5",
+  "commit": "df16eff5ca8fddc1677a549e9dce31bf42ece74e",
   "as_of": "2026-07-20",
   "hardware": "Windows 11 (build 10.0.26200) | AMD64 | py3.11.9",
   "n": 21,
@@ -148,7 +148,7 @@
       "ok": true,
       "reason": "missing",
       "hint": false,
-      "question": "Which order number should I check? You can find it on your confirmation email (for example, NX-2025-301)."
+      "question": "Which order number should I check? You can find it on your confirmation email (for example, NX-XXXX-XXX)."
     },
     {
       "id": "c-ta-02",
@@ -159,7 +159,7 @@
       "ok": true,
       "reason": "missing",
       "hint": false,
-      "question": "Which order number should I check? You can find it on your confirmation email (for example, NX-2025-301)."
+      "question": "Which order number should I check? You can find it on your confirmation email (for example, NX-XXXX-XXX)."
     },
     {
       "id": "c-ta-03",

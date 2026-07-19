@@ -331,5 +331,90 @@ INCONVENIENT / SCOPE (honest):
   stream_agent_response short-circuit) but not driven through the real endpoint this
   session; recommended for the reviewer.
 
-## REVIEW
-(fresh reviewer fills after)
+## REVIEW (fresh reviewer, 2026-07-20)
+
+Scope: F5 as committed (536539e code, a325af6 docs). Re-derived from code and re-ran
+the gates; did not trust the write-up. This is a slot-filling feature that reads the
+user profile (with serials) and conversation history and can call the order/warranty
+tools, so I focused on the cross-user and privacy surface.
+
+VERDICT: CLEAN. The no-over-ask safety property holds under my own probes, the
+self-inflicted cross-user exposure bug is genuinely fixed and I verified it directly,
+the injection ordering is correct, the clarify path never bypasses the tools' own
+authorization, and nothing regressed. One P3 privacy-hygiene note. No P0/P1/P2.
+
+### Independently confirmed (re-ran / re-derived)
+- NO OVER-ASK (load-bearing): clarify_eval reports over-ask 0.000, decision accuracy
+  1.000 across 21 items, every bucket clean (profile_resolvable 5/5, history_resolvable
+  3/3). My own stress probes outside the set agree: "is my thermostat under warranty"
+  (owns 2) resolves, "is my Nexora under warranty" (owns 1) resolves via profile, a
+  generic ref with 2 owned correctly ASKS, a non-owned product noun does NOT ask
+  (named_not_owned -> the tool says "not registered"), and an order query with no id
+  asks. It errs toward proceeding, not interrogating.
+- THE EXPOSURE FIX IS REAL - verified directly. An assistant turn containing the seeded
+  id ("Order NX-2025-301 is processing") plus a vague "has it shipped yet?" does NOT
+  resolve (ask=True, empty hint): _history_user_text filters to role=="user", so the
+  bot's own example id can never be machine-resolved into a stranger's order lookup. The
+  clarify-question case degrades to reask_guard. Both order and warranty history
+  resolution search user turns only.
+- DEFENSE IN DEPTH: even a user-typed foreign id (I probed "NX-2025-999") only becomes a
+  prompt HINT; the tools (check_order_status / check_warranty_status) enforce ownership
+  server-side from the ContextVar user_id (Increment 7, in the 10/10 authz suite), so
+  clarify can never bypass authorization - the worst case is a hint the tool then
+  denies. History itself is the current user's RLS-scoped conversation, so it carries no
+  other user's turns.
+- INJECTION UNCHANGED: the layer-1 guard runs BEFORE clarify (verified in the source and
+  by test_jailbreak_is_refused_before_clarify_not_clarified's source-order assertion);
+  a jailbreak is refused, never clarified. The clarify hint sits BELOW the
+  confidentiality block, folded into the same guidance slot as the F4 tone.
+- PRIVACY: the "which product" question lists product NAMES only ("Nexora Thermostat
+  Pro, LumiGlow Smart Light"), never a serial, though the resolver reads serials
+  server-side. The serial-ask template asks the user to provide one; it echoes none.
+- ZERO-TOKEN: decide() is pure regex/list work (no embedding, even lighter than F1/F4);
+  the ask short-circuit streams the templated question and returns with no LLM call
+  (verified GROQ empty). No new SSE plumbing.
+- NO REGRESSION: full suite 49 passed (hit@5 0.913, injection, output guard, 10/10
+  authz, routing, groundedness, sentiment, clarify); ruff clean.
+
+Credit: the builder found and fixed the search-whose-turns exposure themselves and
+wrote it up as the sharpest lesson - exactly the self-adversarial instinct this
+workstream wants. I confirmed the fix rather than the story.
+
+### Finding
+
+F5-R1 [P3, CONFIRMED] The clarify template's hardcoded example order id is a REAL
+  seeded order, shown to every user. _ORDER_ASK (clarify.py:50) reads "...for example,
+  NX-2025-301", and NX-2025-301 is Bob's real order (supabase/schema.sql:59, :146:
+  "-> Bob"). It is LOW sensitivity - an order-id string with no PII, and the tool denies
+  any cross-user lookup - and it is NOT the exposure bug (that was machine resolution,
+  fixed). But it is a hygiene inconsistency: the feature that just closed a cross-user
+  path THROUGH this example id still DISPLAYS a real customer's order id as its public
+  example. Replace it with an obviously-synthetic placeholder (e.g. "NX-XXXX-XXX" or
+  "NX-0000-000"). Trivial, and it closes the loop honestly. (Test fixtures and the F1
+  routing set also use NX-2025-301, which is fine - the finding is only the user-facing
+  template string.)
+
+BOTTOM LINE: F5 is well-built and safe to ship. The safety property (no over-ask) is
+real and I could not break it, the cross-user exposure the builder caught is genuinely
+closed and I proved it, clarify never bypasses the tools' authorization, injection is
+untouched, and nothing regressed. The one P3 is a one-line placeholder swap. The
+pending live end-to-end through the HTTP endpoint (builder-disclosed) is the only thing
+I did not exercise this session.
+
+---
+
+## F5 CLOSED (2026-07-17) - CLEAN
+Reviewer confirmed the load-bearing NO-OVER-ASK property under adversarial probing
+(0.000 over-ask / 1.000 decision accuracy, 21 items incl. profile-resolvable +
+history hard cases); the exposure fix is real (verified directly); the injection
+guard runs before clarify; the clarify question shows product names only, never
+serials; zero tokens; no regression (49 tests, hit@5 0.913, 10/10 authz).
+Standout: the builder self-caught a cross-user exposure - the order resolver scanned
+ASSISTANT turns, and the clarify question itself contains an example order id, so a
+vague follow-up could false-resolve to a stranger's order. Fixed to search USER turns
+only (LEARNINGS Part 21: "watch whose words you search" - the bot's own output is
+attacker-influenceable content). Defense-in-depth held regardless (tools enforce
+ownership server-side; history is RLS-scoped). Commits 536539e, a325af6.
+Trivial ride-along required: F5-R1 [P3] - the clarify template hardcodes a REAL
+seeded order id (NX-2025-301 = Bob's) as its example; swap to a synthetic placeholder
+(NX-XXXX-XXX). Include it in the release-prep commit. F5 done.

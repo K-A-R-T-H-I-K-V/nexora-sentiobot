@@ -1,6 +1,6 @@
 # Feature F5 - Clarify: no-over-ask + correct-ask
 
-- Commit: `536539ef4c297ae2d17c1eda06e00a5a940a2eb5`  |  As-of: 2026-07-20  |  0 tokens (pure function)
+- Commit: `df16eff5ca8fddc1677a549e9dce31bf42ece74e`  |  As-of: 2026-07-20  |  0 tokens (pure function)
 
 ## Headline
 - Decision accuracy: **1.000** (21 items)

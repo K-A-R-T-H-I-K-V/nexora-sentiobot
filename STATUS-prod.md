@@ -4286,8 +4286,8 @@ The earlier bundled F1 kickoff above is SUPERSEDED by the two-phase F1 in
 docs/increments/F1-intent-routing.md.
 
 ## FEATURE INDEX
-- F1 intent-aware routing -> docs/increments/F1-intent-routing.md  [BUILT + reviewed STRONG; fix F1-R1 eval-leak, then commit]
-- F2 groundedness + citations -> (queued)
+- F1 intent-aware routing -> docs/increments/F1-intent-routing.md  [CLOSED - CLEAN. feat e1dfec7 + docs 84396d3; +0.214 accuracy, leakage guard, zero tokens]
+- F2 groundedness + citations -> docs/increments/F2-groundedness-citations.md  [BUILT, GATE MET, awaiting reviewer. Local zero-token groundedness badge (3-state, no-false-green) + extraction-based inline citations (spans are source substrings); threshold 0.5 earned by RAGAS validation; persist-and-replay; hit@5 0.913 + injection + 10/10 authz unregressed; 31 tests green. Build log in the feature file.]
 - F4 sentiment + escalation -> (queued)
 - F5 clarify-before-answer -> (queued)
 - F7 voice -> (queued)

@@ -1134,3 +1134,77 @@ noise band (empty input scores ~0.381 and passes, a real indirect escalation sco
 0.302 and defers), so it is documented and left un-tuned rather than overfit to a
 28-item set. Naming a limitation you chose not to fix is part of the honest handoff,
 not an admission of failure.
+
+## Part 18 - The trust feature: show the evidence, do not claim the verdict (Feature F2)
+
+F2 is the "trust" feature: after a documentation answer, show whether it is actually
+supported by the retrieved sources (a badge) and show the exact source sentence
+behind each claim (inline citations). It is the increment where the DESIGN of the
+honesty matters more than the code, and it turns on three ideas.
+
+Extraction beats generation for citations. There are two ways to show "the source
+behind this claim". Generate it: ask the model to quote the supporting span. Or
+extract it: match the answer's claims to the retrieved source sentences locally and
+show the matched sentence verbatim. Generation can HALLUCINATE a quote that is not
+in the source, which is the worst possible failure for a trust feature (a fake
+citation is more dangerous than no citation). Extraction cannot: every span is a
+literal slice of the retrieved text, and a one-line test asserts every emitted span
+is a substring of a source, so a hallucinated quote is structurally impossible, not
+just unlikely. When the whole point is trust, prefer the mechanism whose guarantee
+is structural over the one that merely usually works.
+
+Topical overlap is not entailment, so the badge must not overclaim. The groundedness
+score is a local, zero-token cosine match between each claim and the source
+sentences (the same ONNX MiniLM the retriever, cache, and F1 router already load).
+That is cheap and reproducible, but it measures TOPICAL similarity, not logical
+entailment. A claim "the warranty lasts three years" is embedding-similar to a
+source saying "two years"; a negation ("does not cover") sits close to its opposite.
+So the badge is worded to claim only what the method can support: it says each claim
+MATCHES a retrieved passage, never "verified" or "correct", and it SHOWS that passage
+so the human makes the final call. The shown source sentence is the real backstop to
+the score's weakness. The design lesson generalizes past chatbots: when your signal
+is a cheap proxy, state exactly what the proxy measures and put the ground truth in
+front of the user, rather than dressing the proxy up as the verdict.
+
+No false green comes from a conservative label plus real claims. The badge is
+3-state: grounded only if EVERY factual claim matches a source above the threshold;
+partial if some do (a soft-withhold: show the answer, flag it, show the citations);
+unverified if none do or there is no context. Requiring ALL claims to match is what
+makes a false green hard: one unmatched claim drops it to partial. The subtle part
+was defining "claim" well. Naively splitting the answer into sentences produced junk
+"claims": markdown headers, list-item fragments ("in its original packaging"), and
+citation-apparatus preambles ("According to (visionsphere360manual.md | 3."). Those
+are not facts, they never match source prose, and they were sinking good answers to
+"partial". Filtering them out (drop headers, colon lead-ins, filename references,
+pleasantries) let genuinely grounded answers read grounded WITHOUT lowering the
+threshold, which would have risked a false green. The insight: the quality of a
+support check is bounded by the quality of your claim extraction; garbage claims make
+a good answer look ungrounded, and loosening the threshold to compensate is how you
+accidentally ship a false green.
+
+Validate the label before you ship it (and read the answer when the metric argues).
+The planner's rule was: do not pre-commit the wording or threshold, validate the
+local label against 8B RAGAS faithfulness on the frozen golden set first. We reused
+the five human-verified answers committed in Increment 4 (each carries the real
+answer AND the 8B faithfulness), ran the local pass, and compared. Local greened the
+two answers RAGAS also scored high, and, tellingly, greened doc-12 which RAGAS scored
+0.0. Following the Increment 4 discipline we READ doc-12: "the camera is
+weather-resistant (IP65), not fully waterproof, should not be submerged, install in a
+sheltered spot" is exactly what the manual says. The answer is grounded; the weak 8B
+judge cried wolf again, the same failure mode Part 7 documented. So local marking it
+grounded is local being RIGHT where the noisy judge is wrong, not a false green. The
+lesson, twice learned now: a disagreement between a cheap signal and a noisy judge is
+not automatically the cheap signal's fault; resolve it by reading the artifact, and
+let the deterministic property (the synthetic poison test, where an injected
+unsupported claim must never stay green) carry the safety guarantee instead of the
+judge. Committed threshold: 0.5, earned by that validation, not guessed.
+
+Two smaller carries. Persist-and-replay: the badge and citations are stored in the
+message metadata AND with the cache entry, so a cache hit and a page reload show the
+SAME badge as the live answer; a trust signal that flickers or disappears on reload
+is worse than none. And honesty about latency: the local pass costs ~0.8 to 1 second
+of CPU embedding on this hardware. It runs AFTER the answer has streamed and in a
+worker thread, so it does not touch time-to-first-token or block other requests, but
+the badge does resolve about a second after the answer finishes. That is the true
+number; memoizing the fixed corpus's source-sentence embeddings would cut it and is a
+logged forward optimization, not a thing to hide.

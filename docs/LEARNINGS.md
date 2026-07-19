@@ -1363,3 +1363,57 @@ claim to exactly what holds. A green gate on the easy case is not the property. 
 find the blind spot is the same every time, an adversary (here a fresh reviewer) probing
 outside your curated set; the discipline is to pull those probes IN as permanent tests and
 report the honest, sometimes narrower, truth.
+
+## Part 21 - Resolve before you ask: proactivity beats interrogation (Feature F5)
+
+F5 is the feature that separates a conversation from a form. When a query is missing a
+detail (which order? which product?), the naive move is to ask. The better move is to
+try to already KNOW: resolve the missing slot from the message, then the user's profile,
+then the conversation, and ask ONE targeted question only if it is still genuinely
+unknowable. A support agent who makes you re-type your order number when you just gave it
+is worse than one who quietly remembers.
+
+The order-vs-warranty asymmetry is the whole design. The two slot-bearing intents are not
+symmetric, and reading the CODE (not the vibe) is what revealed it. Warranty is usually
+answerable without asking: check_warranty_status resolves a product NAME against the
+user's owned_products, so "is my thermostat under warranty" needs no serial (the profile
+has it), and "is my product under warranty" from someone who owns exactly one thing is
+fully determined. Orders are the opposite: the only lookup is by explicit id, there is no
+per-user order list, so "check my order status" with no id anywhere genuinely cannot be
+resolved and MUST ask. Same feature, opposite defaults, and you only know which is which
+by tracing what the tools can actually do. The lesson: a "clarify" feature is really a
+"resolve" feature; how much you can resolve is a property of your data model, not your
+prompt.
+
+Make the DECISION deterministic, template only the WORDING. The safety property here is
+NO OVER-ASK, and it is the fourth "no false X" gate in a row (no-false-green,
+no-false-escalation, no-false-green-again, now no-over-ask). Per Convention 10 it has to
+be provable on the HARD cases: queries that LOOK ambiguous but are resolvable ("is my
+thermostat under warranty" with a thermostat owned; an order id sitting in a previous
+user turn). A property is only provable if the thing under test is deterministic, so the
+ask/don't-ask DECISION is a pure zero-token function of (message, profile, history), and
+only the QUESTION wording is a context-aware template (it names the product, warms up for
+a frustrated user). The model never decides whether to ask. Result: over-ask 0.000,
+decision accuracy 1.000 on the labeled set, including the profile- and history-resolvable
+buckets that are the entire point.
+
+The bug that taught the deepest lesson: watch what you search over. The first version
+resolved an order id from the whole recent history, including the ASSISTANT's turns. But
+the clarify question itself contains an EXAMPLE id ("for example, NX-2025-301"), which is
+also a REAL order. So the very next turn, the resolver found "NX-2025-301" in the bot's
+own question and "resolved" the user's vague follow-up to a stranger's order, which the
+tool would then have looked up. A helpfulness feature became a cross-user data-exposure
+path through its own example text. The fix was one line, search only USER turns, but the
+principle is sharp: when you scan conversation history for a value, be precise about WHOSE
+words you are trusting. Your own outputs are not user input, and treating them as such can
+turn a convenience into a leak. An id the bot legitimately knows always originated from
+the user anyway, so user-turns-only loses nothing and closes the hole.
+
+Two smaller carries. Clarify DEFERS to an active F4 escalation: a sustainedly-frustrated
+user who is already being offered a human is not then hit with a bureaucratic form
+question; the escalation stands and the clarify yields. Features that both want to speak
+on the same turn need an explicit priority, and "the human offer wins over the form" is the
+humane one. And privacy rides in the wording: the resolver reads serials server-side to
+DECIDE, but the question it asks names products only, never a serial the user did not
+themselves provide, the same server-side-knowledge-without-client-exposure discipline as
+the system prompt's product-name-only rule.

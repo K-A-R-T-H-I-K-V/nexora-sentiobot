@@ -1341,6 +1341,19 @@ choose the set is as load-bearing as the check itself. A filter you added to red
 (the length floor, added in F2 to stop list-fragment false-ambers) can quietly become the
 hole an adversary walks through. Test the selection, not just the scoring.
 
+A disclosed residual, because you cannot fix everything and pretending you did is worse
+(F2-R3). The length floor did not vanish; it shrank to 12 chars / 3 words. So a genuinely
+short unsupported claim, "Fully waterproof." or "Free shipping." (2 words), still slips
+the count and can leave a false green. We deliberately did NOT chase the floor to 1 word:
+below three words the false-amber rate on real short fragments (bullet items, "2.4 GHz
+only") climbs, and you would trade a rare evasion for a common annoyance, a bad deal. The
+Convention-10 rule has a second branch for exactly this, "or NARROW the claim to what
+actually holds", and this is when you take it: the honest headline is "no false green for
+realistic 3-plus-word or hedged claims", with the <=2-word boundary written into the
+module note and here, not buried. Knowing when to keep widening the net and when to state
+the edge of it is its own skill; a limitation you disclose is a boundary, a limitation you
+hide is a lie waiting to be found.
+
 F4-R1: when safety rests on a numeric margin, pin the margin. F4's "a single angry message
 does not escalate" holds because a seed-at-0 EMA of one turn is alpha times the score, and
 alpha (0.5) times a maxed 1.0 is 0.5, just under the 0.52 threshold. That is 0.02 of

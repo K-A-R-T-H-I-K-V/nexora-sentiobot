@@ -7,13 +7,18 @@ sentence behind each supported claim. Both come from ONE local pass over the ONN
 MiniLM embedder the retriever/cache/F1-router already load, so it adds NO LLM call
 and ~0 tokens.
 
-Honest scope of the claim (ratified in the F2 spec): cosine overlap measures
-TOPICAL support, not entailment. It can be fooled by a topically-similar wrong
-number ("2 years" vs "3 years") or a negation. So the badge NEVER says
-"verified"/"correct"/"entailed"; it says each claim MATCHES a retrieved passage,
-and it SHOWS that passage so the human makes the final check. The shown source
-sentence is the real backstop; the score is a supporting signal. Because of that
-weakness the label is CONSERVATIVE and 3-state:
+Honest scope of the claim (ratified in the F2 spec). Two documented residuals:
+- ENTAILMENT (F2-R2): cosine overlap measures TOPICAL support, not entailment. It can
+  be fooled by a topically-similar wrong number ("2 years" vs "3 years") or a negation.
+- CLAIM LENGTH (F2-R3): a small length floor remains (12 chars / 3 words), so a
+  <=2-word unsupported claim ("Fully waterproof.", "Free shipping.") is dropped from the
+  count and can evade the label. Not chased lower on purpose: a lower floor false-ambers
+  genuine short fragments. So "no false green" holds for realistic 3+ word / hedged
+  claims; the <=2-word boundary is stated, not hidden.
+So the badge NEVER says "verified"/"correct"/"entailed"; it says each claim MATCHES a
+retrieved passage, and it SHOWS that passage so the human makes the final check. The
+shown source sentence is the real backstop; the score is a supporting signal. Because
+of these weaknesses the label is CONSERVATIVE and 3-state:
   - grounded   : EVERY factual claim matches a source sentence above the threshold.
   - partial    : some but not all claims matched (soft-withhold; show but flag).
   - unverified : no claims matched, or there was no retrieved context.
@@ -83,10 +88,14 @@ def _clean_claim(sentence: str) -> str:
 
 
 def _is_factual_claim(text: str) -> bool:
-    # F2-R1: the floors are low so SHORT factual claims ("Ships worldwide free.",
-    # 3 words / 20 chars) still count and can downgrade a false green. Non-claims are
-    # excluded by KIND (question / lead-in / citation-apparatus / pleasantry), not by
-    # length.
+    # F2-R1: the floors are LOW so short factual claims ("Ships worldwide free.",
+    # 3 words / 20 chars) still count and can downgrade a false green; non-claims are
+    # excluded mostly by KIND (question / lead-in / citation-apparatus / pleasantry).
+    # F2-R3 (honest correction): a small length floor DOES remain (12 chars / 3 words),
+    # so a <=2-word unsupported claim ("Fully waterproof.", "Free shipping.") is still
+    # dropped and can evade the label. Documented residual (see the module note): "no
+    # false green" holds for realistic 3+ word / hedged claims; the <=2-word boundary is
+    # disclosed, not chased lower (a lower floor false-ambers real short fragments).
     stripped = text.rstrip()
     if len(text) < 12:
         return False

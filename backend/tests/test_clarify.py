@@ -54,7 +54,7 @@ def test_defers_to_active_escalation():
 def test_reask_guard_prevents_loops():
     d = C.decide("order_status", "i do not have it right now", {"owned_products": TWO},
                  [{"role": "assistant", "content": "Which order number should I check? "
-                   "For example, NX-2025-301."}], None, SETTINGS)
+                   "For example, NX-XXXX-XXX."}], None, SETTINGS)
     assert d.ask is False
     assert d.reason == "reask_guard"
 

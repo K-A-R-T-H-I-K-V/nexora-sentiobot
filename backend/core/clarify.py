@@ -47,8 +47,11 @@ _CLARIFY_SIG = re.compile(
     r"which product should i check", re.I)
 
 # Templated questions (zero-token; named/contextual, not robotic).
+# F5-R1: the example uses a SYNTHETIC placeholder, not a real seeded order id
+# (NX-2025-301 is a real order). It is also not `NX-\d{4}-\d{3}`-shaped, so it can never
+# be mistaken for an id by any resolver, in addition to the user-turns-only scan.
 _ORDER_ASK = ("Which order number should I check? You can find it on your confirmation "
-              "email (for example, NX-2025-301).")
+              "email (for example, NX-XXXX-XXX).")
 _WARRANTY_ASK_SERIAL = ("I do not see a product registered to your account yet. Could "
                         "you share the serial number printed on the device so I can "
                         "check its warranty?")

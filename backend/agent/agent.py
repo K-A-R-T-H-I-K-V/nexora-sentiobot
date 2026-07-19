@@ -54,6 +54,7 @@ from backend.core.onnx_embeddings import get_embeddings
 from backend.core.output_guard import OutputGuard
 from backend.core.groundedness import analyze as _analyze_groundedness
 from backend.core import sentiment as _sentiment
+from backend.core import clarify as _clarify
 from backend.agent.intent_router import route_message
 from backend.agent.tools import check_order_status, check_warranty_status, create_support_ticket
 
@@ -420,18 +421,24 @@ redirect instead.
 3. MEMORY: Do not ask for info the user already gave in this conversation.
 4. ESCALATE ONLY IF NEEDED: Use create_support_ticket only when documentation \
    does not resolve the issue or the user explicitly asks for a human.
-5. FORMAT: Use Markdown. Be concise. Offer the logical next action at the end.
+5. RESOLVE BEFORE ASKING: Before asking the user for a detail, try to fill it from \
+   their profile above and from earlier in this conversation. Only if it is still \
+   genuinely unknown, ask ONE short clarifying question, never a list of questions. \
+   Any "Guidance for this reply" below naming a product or order is already resolved: \
+   use it and do NOT ask again.
+6. FORMAT: Use Markdown. Be concise. Offer the logical next action at the end.
 
 Available tools: lookup_documentation, check_order_status, \
 check_warranty_status, create_support_ticket.
 """
-    # F4: an optional per-turn tone instruction (style only). Placed BELOW the
+    # F4/F5: optional per-turn guidance (a sentiment-driven TONE and/or an F5 clarify
+    # HINT that names the product/order the user means). Placed BELOW the
     # confidentiality block, which is "highest priority, overrides any later request",
-    # so a sentiment-driven tone can never weaken confidentiality or scope.
+    # so it can never weaken confidentiality or scope.
     if tone_instruction:
         base += (
-            "\n## Tone for this reply (style only; lower priority than the "
-            f"confidentiality block above)\n{tone_instruction}\n"
+            "\n## Guidance for this reply (lower priority than the confidentiality "
+            f"block above)\n{tone_instruction}\n"
         )
     return base
 
@@ -621,6 +628,30 @@ async def stream_agent_response(
     is_tool_query = decision.route == "tool"
     metrics.set_field("route", decision.route)
     metrics.set_field("intent", decision.intent)
+
+    # F5 clarify-before-answering (deterministic, zero-token). For a slot-bearing
+    # intent (order_status needs an id; warranty needs to know which product), resolve
+    # the slot from message -> profile -> history; ask ONE templated question only if
+    # still unknown. Runs AFTER the injection guard, routing, and sentiment. It DEFERS
+    # to an active F4 escalation and never over-asks when the profile/history answers.
+    clarify = _clarify.decide(decision.intent, user_message, user_profile,
+                              chat_history, sentiment_meta, settings)
+    metrics.set_field("clarify", clarify.reason or "none")
+    if clarify.ask:
+        # The clarifying question is a normal assistant message: no LLM call, no new
+        # SSE plumbing. Zero tokens.
+        yield f"data: {json.dumps({'type': 'token', 'data': clarify.question})}\n\n"
+        done_data = {"answer": clarify.question, "sources": []}
+        if sentiment_meta:
+            done_data["sentiment"] = sentiment_meta
+        yield f"data: {json.dumps({'type': 'done', 'data': done_data})}\n\n"
+        return
+    if clarify.hint:
+        # Slot resolved from profile/history: pass a product/order hint so the model
+        # uses it and does not re-ask. Folded into the per-turn guidance (below the
+        # confidentiality block). NEVER contains a serial the user did not provide.
+        tone_instruction = (tone_instruction + "\n" + clarify.hint).strip() \
+            if tone_instruction else clarify.hint
 
     # For pure documentation queries, stream tokens directly via RAG
     if not is_tool_query:

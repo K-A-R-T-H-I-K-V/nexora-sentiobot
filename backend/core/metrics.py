@@ -38,6 +38,7 @@ class RequestMetrics:
     route: str = ""
     intent: str = ""  # F1: classified intent (or "keyword"/fallback label)
     sentiment: str = ""  # F4: detected emotion label (calm/confused/frustrated/angry)
+    clarify: str = ""  # F5: clarify decision reason (asked slot, or resolved_*/defer_*)
     cache_hit: bool = False
     llm_calls: int = 0
     embedding_ops: int = 0

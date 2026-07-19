@@ -126,6 +126,12 @@ class Settings(BaseSettings):
     # default (adds tokens on the hot path of every message).
     sentiment_nli: bool = False
 
+    # --- Clarify-before-answering (Feature F5) ---
+    # Deterministic, zero-token pre-check: for order_status / warranty, resolve the
+    # missing slot from message -> profile -> history, and ask ONE templated question
+    # only if still unknown. Never over-asks when the profile/history already answers.
+    clarify_enabled: bool = True
+
     # --- Retrieval ---
     # Increment 4: base ensemble (BM25 + vector) is the default. The multi-query
     # retriever (extra LLM call per query) is kept behind this flag, reversible

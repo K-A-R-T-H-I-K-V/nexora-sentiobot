@@ -1,0 +1,39 @@
+{
+  "version": "v1",
+  "purpose": "Labeled clarify eval set for Feature F5. Each item = an intent + message + a mock profile (owned_products) + optional history + optional sentiment, with the ideal expect_ask. The LOAD-BEARING metric (Convention 10) is NO OVER-ASK on the resolvable buckets, tested on the HARD cases (queries that LOOK ambiguous but are resolvable from profile/history). Separate from the frozen golden set; deterministic, zero-token.",
+  "as_of_date": "2026-07-20",
+  "buckets_note": "well_specified/profile_resolvable/history_resolvable/interaction -> expect_ask=false; truly_ambiguous -> expect_ask=true. profile_resolvable + history_resolvable are the HARD cases. not_slot = an intent that never clarifies.",
+  "products": {
+    "TWO": [{"product_name": "Nexora Thermostat Pro", "serial_number": "SN-NTS-PRO-ABC123"}, {"product_name": "LumiGlow Smart Light", "serial_number": "SN-LGX-0001"}],
+    "ONE": [{"product_name": "Nexora Thermostat Pro", "serial_number": "SN-NTS-PRO-ABC123"}],
+    "NONE": []
+  },
+  "items": [
+    {"id": "c-ws-01", "bucket": "well_specified", "intent": "order_status", "message": "what is the status of order NX-2025-301?", "owned": "TWO", "expect_ask": false},
+    {"id": "c-ws-02", "bucket": "well_specified", "intent": "warranty", "message": "check the warranty on serial number SN-NTS-PRO-ABC123", "owned": "TWO", "expect_ask": false},
+    {"id": "c-ws-03", "bucket": "well_specified", "intent": "order_status", "message": "please give me the status of NX-2025-303", "owned": "ONE", "expect_ask": false},
+
+    {"id": "c-pr-01", "bucket": "profile_resolvable", "intent": "warranty", "message": "is my thermostat still under warranty?", "owned": "TWO", "expect_ask": false, "note": "LOOKS ambiguous (no serial) but the profile resolves 'thermostat'"},
+    {"id": "c-pr-02", "bucket": "profile_resolvable", "intent": "warranty", "message": "is my product still under warranty?", "owned": "ONE", "expect_ask": false, "note": "generic reference, but the user owns exactly one product"},
+    {"id": "c-pr-03", "bucket": "profile_resolvable", "intent": "warranty", "message": "is it still covered under warranty?", "owned": "ONE", "expect_ask": false, "note": "bare 'it', owns one"},
+    {"id": "c-pr-04", "bucket": "profile_resolvable", "intent": "warranty", "message": "is my LumiGlow smart light covered?", "owned": "TWO", "expect_ask": false, "note": "names an owned product among two"},
+    {"id": "c-pr-05", "bucket": "profile_resolvable", "intent": "warranty", "message": "is my camera under warranty?", "owned": "ONE", "expect_ask": false, "note": "names a NON-owned product noun -> slot filled, tool answers 'not registered', do not over-ask"},
+
+    {"id": "c-hr-01", "bucket": "history_resolvable", "intent": "order_status", "message": "has that order shipped yet?", "owned": "TWO", "history": [{"role": "user", "content": "what items are in order NX-2025-302"}, {"role": "assistant", "content": "Order NX-2025-302 is processing."}], "expect_ask": false, "note": "order id from a USER turn earlier"},
+    {"id": "c-hr-02", "bucket": "history_resolvable", "intent": "warranty", "message": "and is that one still covered?", "owned": "TWO", "history": [{"role": "user", "content": "how do I reset my Thermostat Pro"}, {"role": "assistant", "content": "To reset the Thermostat Pro..."}], "expect_ask": false, "note": "product from history"},
+    {"id": "c-hr-03", "bucket": "history_resolvable", "intent": "order_status", "message": "it is NX-2025-303", "owned": "TWO", "history": [{"role": "assistant", "content": "Which order number should I check? For example, NX-2025-301."}], "expect_ask": false, "note": "user answers the clarify with the id"},
+
+    {"id": "c-ta-01", "bucket": "truly_ambiguous", "intent": "order_status", "message": "can you check my order status?", "owned": "TWO", "expect_ask": true, "note": "no id anywhere"},
+    {"id": "c-ta-02", "bucket": "truly_ambiguous", "intent": "order_status", "message": "where is my package?", "owned": "TWO", "expect_ask": true},
+    {"id": "c-ta-03", "bucket": "truly_ambiguous", "intent": "warranty", "message": "is my device under warranty?", "owned": "TWO", "expect_ask": true, "note": "generic + owns two -> which product"},
+    {"id": "c-ta-04", "bucket": "truly_ambiguous", "intent": "warranty", "message": "can you check my warranty?", "owned": "TWO", "expect_ask": true},
+    {"id": "c-ta-05", "bucket": "truly_ambiguous", "intent": "warranty", "message": "is my gadget under warranty?", "owned": "NONE", "expect_ask": true, "note": "no registered products -> ask for the serial"},
+
+    {"id": "c-int-01", "bucket": "interaction", "intent": "warranty", "message": "seriously is my thing even covered or not", "owned": "TWO", "sentiment": {"label": "angry", "escalate": true}, "expect_ask": false, "note": "DEFER: F4 escalation is firing, do not stack a form question on the human offer"},
+    {"id": "c-int-02", "bucket": "interaction", "intent": "order_status", "message": "i do not have it handy right now", "owned": "TWO", "history": [{"role": "assistant", "content": "Which order number should I check? For example, NX-2025-301."}], "expect_ask": false, "note": "RE-ASK GUARD: already asked last turn, do not loop"},
+    {"id": "c-int-03", "bucket": "truly_ambiguous", "intent": "warranty", "message": "ugh which of these is even covered", "owned": "TWO", "sentiment": {"label": "frustrated", "escalate": false}, "expect_ask": true, "expect_warm": true, "note": "mild frustration (not escalating) -> still ask, but warmly"},
+
+    {"id": "c-ns-01", "bucket": "not_slot", "intent": "doc_lookup", "message": "what does the warranty policy cover for water damage?", "owned": "TWO", "expect_ask": false, "note": "doc_lookup never clarifies"},
+    {"id": "c-ns-02", "bucket": "not_slot", "intent": "ticket_or_escalation", "message": "please open a support ticket for my broken camera", "owned": "TWO", "expect_ask": false}
+  ]
+}

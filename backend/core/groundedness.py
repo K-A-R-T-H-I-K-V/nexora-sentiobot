@@ -42,12 +42,22 @@ _LIST_PREFIX = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+")
 
 # Non-factual sentences (greetings, offers of help) are excluded from the claim set:
 # they carry no fact to ground, and counting them would wrongly sink the label.
+# NOTE (F2-R1): hedged OPENERS ("of course ...", "sure ...") are NOT here - they
+# prefix real claims ("of course it also includes a free speaker"), so treating the
+# whole sentence as non-factual let a fabrication evade the count. They are stripped
+# as a prefix instead (below), leaving the actual claim to be checked.
 _NONFACTUAL = re.compile(
     r"\b(let me know|feel free|hope (this|that) helps|anything else|glad to help|"
     r"happy to help|is there anything|if you have any|please let me|would you like|"
-    r"i can help|how can i help|you'?re welcome|no problem|of course|sure thing)\b",
+    r"i can help|how can i help|you'?re welcome|no problem)\b",
     re.I,
 )
+
+# Hedge / filler OPENERS, stripped from the front of a claim so the fact behind them
+# is still checked. "Of course it also includes X" -> "it also includes X".
+_HEDGE_PREFIX = re.compile(
+    r"^\s*(of course|sure thing|surely|sure|certainly|absolutely|definitely|indeed|"
+    r"yes|yeah|yep)[,!.:]*\s+", re.I)
 
 # Citation-apparatus references ("According to the (visionsphere360manual.md | 3.")
 # are about the SOURCE machinery, not facts, and would never match source prose.
@@ -63,13 +73,22 @@ def _normed(mat: np.ndarray) -> np.ndarray:
 def _clean_claim(sentence: str) -> str:
     s = _CITATION_MARKER.sub("", sentence)
     s = _LIST_PREFIX.sub("", s)
+    for _ in range(2):                     # strip up to two stacked hedge openers
+        s2 = _HEDGE_PREFIX.sub("", s)
+        if s2 == s:
+            break
+        s = s2
     s = _MD_NOISE.sub("", s)
     return s.strip()
 
 
 def _is_factual_claim(text: str) -> bool:
+    # F2-R1: the floors are low so SHORT factual claims ("Ships worldwide free.",
+    # 3 words / 20 chars) still count and can downgrade a false green. Non-claims are
+    # excluded by KIND (question / lead-in / citation-apparatus / pleasantry), not by
+    # length.
     stripped = text.rstrip()
-    if len(text) < 25:
+    if len(text) < 12:
         return False
     if stripped.endswith("?"):     # a question, not a claim
         return False
@@ -79,7 +98,7 @@ def _is_factual_claim(text: str) -> bool:
         return False
     if _NONFACTUAL.search(text):
         return False
-    return len(text.split()) >= 4
+    return len(text.split()) >= 3
 
 
 _HEADER = re.compile(r"^\s*#+\s")

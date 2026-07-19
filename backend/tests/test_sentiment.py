@@ -77,3 +77,31 @@ def test_sentiment_is_zero_token():
     # proves the pass is purely local ONNX.
     r = S.analyze("this still will not connect and it is really frustrating", [], SETTINGS)
     assert r.label in S.LABELS
+
+
+def test_single_spike_stays_below_threshold():
+    # F4-R1: PIN the single-spike-safe margin. A single MAXIMUM-frustration turn (no
+    # history) must land BELOW the escalation threshold, so one angry message never
+    # escalates on its own (only sustained frustration, or explicit profanity, does).
+    # The seed-at-0 EMA of one turn is exactly alpha * score, so the invariant is
+    # alpha * 1.0 < escalation_threshold. This test fails loudly if a future retune of
+    # alpha or the threshold silently starts escalating single spikes.
+    alpha = SETTINGS.sentiment_ema_alpha
+    thr = SETTINGS.sentiment_escalation_threshold
+    assert alpha * 1.0 < thr, (
+        f"single-spike safety broken: alpha*1.0={alpha} >= threshold={thr}; "
+        "a lone maximum-anger turn would now escalate"
+    )
+    # And prove it end-to-end on a maxed non-profane single turn (no history).
+    # (Profanity has its own high-precision override, tested separately.)
+    r = S.analyze("this is absolute garbage and a total ripoff, useless", [], SETTINGS)
+    assert r.score >= 0.9, r.score          # a maximum-frustration read
+    assert r.escalate is False, (r.ema, r.escalate)  # but a single spike does not escalate
+
+
+def test_sustained_frustration_does_escalate():
+    # The paired invariant: two frustrated turns cross the threshold (sustained).
+    r = S.analyze("still broken and it is really frustrating",
+                  ["this still will not connect", "i tried that already and nothing helped"],
+                  SETTINGS)
+    assert r.escalate is True, (r.ema, r.escalate)

@@ -44,6 +44,25 @@ def test_poisoned_answer_is_never_green():
     assert r["grounded"]["label"] != "grounded", r["grounded"]
 
 
+def test_short_unsupported_claim_is_not_green():
+    # F2-R1: a SHORT fabricated factual clause ("Ships worldwide free." = 3 words)
+    # must still count and downgrade the label. It evaded the old 25-char floor.
+    answer = ("The warranty covers manufacturing defects for two years [Source 1]. "
+              "Ships worldwide free.")
+    r = analyze(answer, SRC, SETTINGS)
+    assert r["grounded"]["label"] != "grounded", r["grounded"]
+
+
+def test_hedged_unsupported_claim_is_not_green():
+    # F2-R1: a HEDGED fabrication ("Of course it also ...") must count. The hedge
+    # opener is stripped and the claim behind it is checked; it used to be dropped
+    # wholesale by the non-factual filter.
+    answer = ("The warranty covers manufacturing defects for two years [Source 1]. "
+              "Of course it also includes a complimentary smart speaker.")
+    r = analyze(answer, SRC, SETTINGS)
+    assert r["grounded"]["label"] != "grounded", r["grounded"]
+
+
 def test_citation_spans_are_substrings_of_source():
     answer = ("The warranty covers manufacturing defects for two years [Source 1]. "
               "Refunds are issued within fourteen days [Source 1].")

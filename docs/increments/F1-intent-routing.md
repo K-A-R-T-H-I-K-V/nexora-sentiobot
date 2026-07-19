@@ -45,6 +45,10 @@ Verified vs the gate: embedding 0.929 vs keyword 0.714 (delta +0.214) on 28 quer
 6/8 keyword misroutes fixed (2 mixed-intent residuals disclosed); zero-token (no LLM
 call, GROQ key empty); hit@5 0.913 + injection + 10/10 authz unregressed; ruff +
 full pytest green.
+[CORRECTED by F1-R5, 2026-07-19: these 28-item numbers were OVER-STATED. The honest
+widened figures are embedding 0.839 / keyword 0.645 / +0.194, doc_lookup 12/15,
+6-of-11 misroutes fixed on a 31-item set that includes over-trigger residuals the
+router does NOT fix. See "F1-R5 CORRECTION DONE" at the end of this file.]
 
 F1-R1 (eval leakage) fixed the CLEAN way before commit: the reviewer named 2 leaked
 eval items; the full diff (normalized string match OR cosine >= 0.90) found 5, all
@@ -165,6 +169,116 @@ misroutes and regresses nothing frozen (hit@5 0.913, injection ordering, 10/10 a
 Close F1-R1 (the false "no overlap" claim + the one leaked prototype) before promoting;
 F1-R2..R4 and the process note are the dev's call.
 
+### RE-REVIEW (fresh reviewer, 2026-07-18) - F1-R1 verified fixed, VERDICT now CLEAN
+
+I re-derived the F1-R1 fix from the changed files and re-ran every gate. It is fixed
+the CLEAN way, not cosmetically, and I confirmed it independently rather than trusting
+the eval's own leakage function:
+
+- LEAKAGE GONE (my own recompute, not their leakage_report): I re-embedded every eval
+  question against every prototype myself. Closest surviving pair is r-pol-01 at cosine
+  0.880; nothing is >= 0.90 and there are zero normalized string copies. The five
+  near-copies I would have flagged (r-war-02 0.99, r-oos-01 0.98, r-doc-03 0.92,
+  r-tik-01 0.91, r-oos-02 0.91) are all replaced with independent phrasings, and the
+  concrete-serial prototype is generalized to "...for my product's serial number".
+- THE GUARD ACTUALLY BITES: I fed a verbatim prototype ("is water damage covered under
+  the warranty policy") into leakage_report as a synthetic eval item; it flagged it
+  (cosine 1.0, string_copy true). The invariant is wired into both the eval `passed`
+  flag (routing_eval.py:166-167) and test_no_prototype_leakage, so a reintroduced leak
+  fails CI. Not a no-op.
+- THE FALSE CLAIM IS CORRECTED: intent_router.py:67-72 no longer asserts a bare "not
+  copied"; it states the prototypes are kept DISJOINT and points at the enforced check.
+- HONEST NUMBERS, UNCHANGED: re-ran the A/B twice - keyword 0.714 / embedding 0.929 /
+  delta +0.214, 6/8 misroutes fixed, 1 fallback, byte-identical to the committed
+  results/routing_eval.json (which the builder correctly re-ran after the fix: it shows
+  the new r-war-02 text and leakage_guard PASS, max cosine 0.8798). The leaked items
+  were both-router-correct filler, so replacing them left the headline untouched, as
+  claimed; the delta was never leak-dependent.
+- NO REGRESSION: full deterministic suite 26 passed / 0 failed (routing now 7 tests
+  incl. the leakage guard, hit@5 == 0.913 misses [doc-01, doc-13], injection filter,
+  output guard, authz 10/10). My hostile battery (empty, 100K-char, injection, SQL,
+  gibberish, emoji, non-English) still degrades gracefully with no crash.
+- P3s ADDRESSED: F1-R2 (non-English) and F1-R3 (threshold noise band) are now written
+  up as limitations in routing_set_v1.json and surfaced in the eval report. F1-R4
+  (results stamp names a commit that lacks the code) still resolves on the pending
+  commit + re-stamp; that is the only open thread and it is mechanical.
+- PROCESS NOTE RESOLVED: the one-pass cadence was a genuine timing artifact (the
+  two-phase feature file post-dated F1) and is retroactively ratified by the planner
+  in this file, with two-phase enforced from F2 on. The builder's BUILD-LOG claim of
+  that ratification is truthful (I checked the ratification exists; it is not
+  fabricated), and the empty PHASE A/B were honestly left empty rather than backfilled.
+
+RE-REVIEW VERDICT: CLEAN. The one P2 is genuinely closed and independently verified,
+nothing frozen regressed, and the only remaining item (F1-R4) is a stamp that closes
+on commit. F1 is ready to commit and promote.
+
+### STRONG RE-REVIEW (fresh reviewer, round 3, 2026-07-19) - committed as e1dfec7, F2 layered on
+
+This pass went past the eval numbers into the deployed integration and the feature's
+own promise under inputs the 28-item set never touches. F1 is now committed
+(e1dfec7, single commit; the approved plan said two, immaterial) with F2 groundedness
+committed on top (a1cf089).
+
+Still-holding confirmations (re-run on the CURRENT HEAD, not the state I first saw):
+- F2 did NOT regress F1: routing A/B on HEAD is still keyword 0.714 / embedding 0.929
+  / +0.214, leakage guard PASS (max cosine 0.880), 7/7 routing tests pass, ruff clean.
+- Integration trace (agent.py stream_agent_response, the real deployed path): the
+  layer-1 injection refusal (line 566) still precedes route_message (line 585);
+  routing sets route + intent metrics; both branches (RAG line 591, LangGraph tool
+  line 642) are intact and unaffected by F1 beyond the router swap.
+- The event-loop-blocking worry I had (route_message embeds synchronously, no await)
+  is bounded: main.py:158 refuses any message over max_input_chars (8000) BEFORE
+  routing, and MiniLM truncates to 256 tokens, so the synchronous embed is sub-ms.
+  Not a finding.
+
+NEW findings this round (neither prior review nor the builder surfaced these):
+
+F1-R5 [P2, CONFIRMED] The "fixes the keyword over-trigger" headline is over-stated;
+  realistic documentation/compatibility questions that contain a tool keyword STILL
+  misroute to the tool path, by two mechanisms the 28-item eval never exercises.
+  (a) The low-confidence fallback IS the keyword router (intent_router.py:233 calls
+      keyword_route on conf < 0.35), so it re-introduces the exact over-trigger F1
+      exists to remove. Reproduced:
+      - "do you support HomeKit?"        conf 0.332 -> fallback -> keyword sees
+        "support" -> TOOL (a pure compatibility/doc question).
+      - "can I order replacement parts?" conf 0.309 -> fallback -> keyword sees
+        "order" -> TOOL (a how-to/doc question).
+  (b) The embedder itself over-triggers at moderate/high confidence on some
+      warranty-POLICY phrasings (the very class F1 promises to send to RAG):
+      - "is a cracked screen a warranty thing"       0.564 -> warranty -> TOOL
+        (a coverage/policy question; the warranty-STATUS tool cannot answer it).
+      - "what human languages does the app support?"  0.392 -> ticket -> TOOL.
+  None of these four are in routing_set_v1.json, so the 0.929 (and the "12/12
+  doc_lookup") does not reflect them. Reproduced with route_message(default router)
+  under GROQ empty. This is NOT a regression - F1 is never worse than keyword here
+  (the fallback equals keyword; the embedder-confident cases keyword also sent to
+  tool), and both paths still answer - but the eval overstates the real-world
+  over-trigger fix, and the docs frame the day-one flaw as solved. Per the repo's
+  honesty bar, this needs disclosure: add these adversarial phrasings to
+  routing_set_v1.json and report the honest (lower) doc_lookup number, and/or document
+  that low-confidence keyword-bearing doc questions fall back to the legacy behaviour.
+  Fixing the fallback itself is a genuine tension (defaulting low-confidence to RAG
+  would break the indirect-escalation under-trigger fixes), so I recommend disclose +
+  widen-the-eval over changing the fallback.
+
+F1-R6 [P3, CONFIRMED] Routing is stateless - it ignores chat_history and routes on the
+  bare current turn, so multi-turn STATUS follow-ups misroute. Reproduced:
+  "is mine covered?" (a warranty-status follow-up about the user's own product) ->
+  rag 0.391, so it gets a generic policy answer from RAG instead of the warranty
+  tool. "how long does that last?" -> rag 0.360. Degraded, not broken (RAG still
+  answers), and all eval items are single-turn so this is unmeasured. Document as a
+  limitation, or feed the last user turn into the classifier input.
+
+STRONG-REVIEW VERDICT: the feature is real, correct on its measured scope, zero-token,
+deterministic, security-neutral (injection ordering preserved), and F2 did not regress
+it - everything my first two rounds certified still holds on the committed HEAD. The
+new finding is a claim-scope / disclosure gap (F1-R5, P2): the over-trigger is only
+partially fixed and easy to break with ordinary phrasings outside the small curated
+set, so the "fixed the day-one flaw" framing and the 0.929 are more generous than the
+real behaviour. It does not block the feature (never worse than baseline, both paths
+answer), but it should be disclosed and the eval widened before this becomes a resume
+line. F1-R6 (stateless multi-turn) is a P3 limitation to document.
+
 ---
 
 ## PLANNER RATIFICATION (2026-07-17, retroactive)
@@ -217,3 +331,87 @@ Commit plan (APPROVED, on v2-fullstack, AFTER the F1-R1 fix):
 
 STATUS: F1 built + reviewed STRONG; ACCEPTED pending the F1-R1 de-leak fix, then
 commit + promote.
+
+---
+
+## F1 CLOSED (2026-07-17) - CLEAN
+F1-R1 fixed the clean way and independently re-reviewed CLEAN. Builder swept wider
+than the finding (5 leaked items, not 2), replaced all with independent phrasings,
+generalized the seeded serial, corrected the false comment, and added a MEASURED
+leakage guard (max eval->prototype cosine must stay < 0.90; wired into the eval
+pass flag + test_no_prototype_leakage in CI). Reviewer recomputed cosines
+independently (max 0.880), confirmed the guard bites, confirmed no regression
+(suite 26 passed, hit@5 0.913, injection + 10/10 authz green).
+Honest number: keyword 0.714 / embedding 0.929, delta +0.214 (NOT +0.231; the
+planner's commit-message figure assumed dropping items, the builder replaced all 5
+and kept 28-question coverage, so the score held - which is itself the proof of
+genuine generalization, not memorization). Zero added tokens (local ONNX).
+Commits on v2-fullstack: e1dfec7 feat(routing); 84396d3 docs(process) with the
+re-stamped results. P3s (non-English fallback, threshold noise band) documented as
+limitations, not gold-plated. F1-R4 provenance resolved by the re-stamp.
+F1 is done. This is the first AI feature shipped through the full loop.
+
+---
+
+## POST-CLOSE CORRECTION - F1-R5 [P2] + F1-R6 [P3] (planner, 2026-07-17)
+While reviewing F2, a later reviewer found F1's headline is OVER-STATED: the 28-item
+routing eval omits the residual over-trigger cases, so "+0.214 / fixed the day-one
+flaw" is rosier than reality. This is a claim-scope / honesty gap, NOT a regression
+(F1 is never worse than keyword on these; both paths still answer). Ruling:
+DISCLOSE-AND-WIDEN. Do NOT re-architect the fallback - defaulting low-confidence to
+RAG would break the indirect-escalation fixes; that tension is logged for a future
+routing v2.
+
+F1-R5 FIX (small correction increment):
+- Add the residual over-trigger phrasings to results/routing_set_v1.json as new
+  labeled cases: the low-confidence fallback re-triggering the keyword bug
+  ("do you support HomeKit?" -> doc_lookup; "can I order replacement parts?" ->
+  doc_lookup) and the embedder over-trigger ("is a cracked screen a warranty thing"
+  -> coverage = doc_lookup, not the status tool). Keep the leakage guard passing.
+- Re-run routing_eval and REPORT THE HONEST, lower accuracy (it will drop below
+  0.929 - that is the point). Update EVERY place the +0.214 / "fixed the flaw" claim
+  appears (STATUS, LEARNINGS, results, and any future README/resume line) to the
+  honest number + its scope.
+- DOCUMENT the fallback behavior (low-confidence -> keyword router, which can
+  over-trigger) and the residual as a known limitation.
+F1-R6 [P3]: routing is STATELESS (ignores chat_history), so multi-turn status
+follow-ups ("is mine covered?") misroute. DOCUMENT as a limitation now; a
+history-aware classifier is a queued routing-v2 refinement, not this increment.
+LEARNINGS meta-lesson to append: your eval's COVERAGE is your claim's SCOPE - an
+accuracy number only speaks for the distribution you tested; a reviewer probing
+BEYOND the eval is how you find the number's blind spots (second time now; see
+Part 9). Widen the eval, restate the honest number.
+Housekeeping: also commit the two files left uncommitted (CLAUDE.md and this F1
+file); never git add .
+
+---
+
+## F1-R5 CORRECTION DONE (builder, 2026-07-19)
+Disclose-and-widen, per the ruling above. No re-architecture of the fallback.
+
+- Added the residual over-trigger phrasings to results/routing_set_v1.json as
+  labeled doc_lookup/rag cases, all keyword_misroute + known_hard (F1 does NOT fix
+  them), all leakage-clean (max prototype cosine 0.564 < 0.90):
+  - r-res-01 "do you support HomeKit?"      -> embedding conf 0.332 -> fallback ->
+    keyword sees "support" -> TOOL (wrong; ideal rag).
+  - r-res-02 "can I order replacement parts?" -> conf 0.309 -> fallback -> "order"
+    -> TOOL (wrong).
+  - r-res-03 "is a cracked screen a warranty thing" -> embedder over-triggers to
+    warranty (TOOL) at 0.564 (wrong; a coverage/policy question).
+- Re-ran routing_eval. HONEST widened numbers (was 0.929 / 0.714 / +0.214 / 6-of-8
+  on the 28-item set): embedding 0.839 vs keyword 0.645, delta +0.194, doc_lookup
+  12/15, 6/11 keyword misroutes fixed. Leakage guard still PASS (max 0.880 < 0.90).
+  Eval still PASS (embedding > keyword; gate items route correctly; no stale labels).
+- test_routing.py accuracy floor lowered 0.85 -> 0.78 to sit below the honest 0.839
+  with headroom (still a real regression tripwire). test suite green.
+- Documented F1-R5 (fallback inherits the keyword over-trigger; over-trigger REDUCED
+  not removed) and F1-R6 (stateless routing; multi-turn status follow-ups misroute)
+  as limitations in routing_set_v1.json + LEARNINGS Part 17.
+- Corrected the +0.214 / "fixed the flaw" claim to the honest number + scope in
+  STATUS (FEATURE INDEX), LEARNINGS Part 17 (headline + new correction subsection +
+  meta-lesson "your eval's coverage is your claim's scope"), and the results files.
+- Housekeeping: committed CLAUDE.md and this F1 file (were left uncommitted after F1).
+- NOT changed: the low-confidence -> keyword fallback (defaulting to RAG would break
+  the indirect-escalation under-trigger fixes) and stateless routing; both are queued
+  as routing v2. This is a claim-SCOPE correction, not a behaviour change: F1 is never
+  worse than the keyword router on these cases, and both paths still answer.

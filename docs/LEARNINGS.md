@@ -1030,11 +1030,15 @@ elsewhere in the codebase: the embedding classifier handles the clear cases
 is genuinely unsure, so the change can never do worse than a coin flip on a weird
 input. Only 1 of 28 queries hit the fallback.
 
-The honest result, including the inconvenient part. On a 28-query labeled routing
-set (reusing the golden categories plus the known hard cases), the embedding router
-scored 0.929 versus the keyword router's 0.714, a +0.214 absolute gain, and it
-fixed 6 of the 8 cases keyword mis-routes. It did NOT fix two, and naming them is
-the point:
+The result, and the important correction below. On the ORIGINAL 28-query labeled
+set the embedding router scored 0.929 versus keyword 0.714 (+0.214), fixing 6 of 8
+keyword misroutes. That number was OVER-STATED and a later reviewer caught it: the
+28-item set left out realistic documentation/compatibility questions that contain a
+tool keyword and that the router does NOT fix. After widening the set to 31, the
+HONEST figure is embedding 0.839 versus keyword 0.645 (+0.194), doc_lookup routing
+12/15, and 6 of 11 keyword misroutes corrected. The over-trigger flaw is REDUCED,
+not removed. Full accounting in the F1-R5 correction at the end of this Part; read
+the two original mixed-intent misses below as part of that larger residual story:
 - One is a MIXED-intent message (a troubleshooting complaint AND an escalation
   request); the troubleshooting content dominates the embedding, so it reads as
   doc_lookup. A single vector cannot represent "70 percent doc, 30 percent
@@ -1044,14 +1048,12 @@ the point:
   sent it to keyword (which got it wrong). That is the precision/recall cost of the
   threshold, laid bare.
 
-The discipline that matters here: we did NOT patch those two by adding a prototype
+The discipline that matters here: we did NOT patch the misses by adding a prototype
 copied from the failing eval question. That would be teaching to the test, the
 exact sin Part 7 and Increment 5 warn about; it would make the number go up and the
-classifier no better. Instead we DROPPED those two from the CI gate (they are not
-pure over/under-trigger cases, which is what the feature promises to fix), left
-them in the eval as visible misses, and wrote them up as a disclosed residual.
-"6 of 8, and here are the 2 we do not fix and why" is a stronger claim than a
-scrubbed "8 of 8."
+classifier no better. We left them in the eval as visible misses and wrote them up
+as a disclosed residual. "Here are the ones we do not fix and why" is a stronger,
+more honest claim than a scrubbed perfect score.
 
 Reversible and gated, like every change before it. The old router stays behind a
 config flag (ROUTER=keyword) so the whole thing is one line to roll back and A/B
@@ -1110,7 +1112,9 @@ any item reaches the bar. This is the same move as the frozen-golden-set SHA in
 Increment 4: a property you care about is only real if a machine re-checks it on
 every run. A false honesty-claim in a comment became a test that cannot silently rot.
 
-Now the honest number, which is the subtle part. The de-leak did NOT widen the delta
+Now the number at the de-leak step, which is the subtle part (these are the ORIGINAL
+28-item figures, later corrected downward by F1-R5, below; the point here is about
+de-leak mechanics, not the final headline). The de-leak did NOT widen the delta
 to +0.231; it stayed at +0.214 (embedding 0.929, keyword 0.714, unchanged). The
 +0.231 the reviewer computed assumed DROPPING the two items (a 26-question set).
 We REPLACED instead (keeping all 28 and full category coverage), and the delta did
@@ -1134,6 +1138,42 @@ noise band (empty input scores ~0.381 and passes, a real indirect escalation sco
 0.302 and defers), so it is documented and left un-tuned rather than overfit to a
 28-item set. Naming a limitation you chose not to fix is part of the honest handoff,
 not an admission of failure.
+
+### Post-close correction (F1-R5): your eval's coverage is your claim's scope
+F1 shipped, was reviewed CLEAN, and closed. Then, while reviewing F2, a fresh
+reviewer probed the router with ordinary phrasings that were NOT in the 28-item eval
+and broke the headline. "do you support HomeKit?" and "can I order replacement
+parts?" are plain documentation questions, but the router scores them below the 0.35
+confidence threshold, and its low-confidence FALLBACK is the legacy keyword router,
+which sees "support"/"order" and sends them to the tool path. That is the exact
+day-one over-trigger F1 exists to remove, re-entering through the back door. And "is
+a cracked screen a warranty thing" is a coverage question the embedder itself
+confidently misroutes to the warranty-STATUS tool (0.564). None of these four were in
+the eval, so the 0.929 and the perfect "12/12 doc_lookup" never saw them.
+
+The fix was disclose-and-widen, not spin. We added the residual phrasings to the eval
+(r-res-01/02/03, still leakage-clean), re-ran, and reported the LOWER honest number:
+embedding 0.839 versus keyword 0.645 (+0.194), doc_lookup 12/15, 6 of 11 keyword
+misroutes fixed. Every place that had said "+0.214 / fixed the day-one flaw" (STATUS,
+this file, the results) was corrected to that number and its scope: the over-trigger
+is REDUCED, not removed. We did NOT re-architect the fallback to force it down,
+because defaulting low-confidence queries to RAG would break the indirect-escalation
+under-trigger fixes the router genuinely earns; that real tension is logged for a
+routing v2, not papered over.
+
+The meta-lesson, and it is the second time this project has taught it (see Part 9):
+an accuracy number only speaks for the DISTRIBUTION you tested it on. Your eval's
+coverage IS your claim's scope. "0.929" was never false; it was true of a 28-item set
+that quietly excluded the cases the feature is weakest on, which made it read as a
+broader claim than it was. The way you find that blind spot is an adversary who
+probes OUTSIDE your curated set, and the honest response is to pull those probes INTO
+the set and restate the number, even when it drops. A metric you can only keep high
+by not testing the hard cases is a story you are telling yourself. Two smaller
+carries recorded as limitations: the low-confidence fallback inherits the keyword
+router's over-trigger (F1-R5), and routing is STATELESS (F1-R6), so it ignores
+chat_history and misroutes multi-turn status follow-ups like "is mine covered?" to
+RAG; both are documented, and a history-aware, better-calibrated router is queued as
+routing v2 rather than rushed here.
 
 ## Part 18 - The trust feature: show the evidence, do not claim the verdict (Feature F2)
 

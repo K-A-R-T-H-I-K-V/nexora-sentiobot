@@ -50,6 +50,9 @@ here). Do not re-paste them into prompts.
    commit secrets; no em dashes anywhere.
 8. THE REVIEWER IS ALWAYS A FRESH SESSION: adversarial, re-runs everything
    itself, trusts nothing it is told.
+9. ANY MERGE TO main REDEPLOYS PRODUCTION (Render deploys from main): its gate
+   includes a LIVE post-deploy smoke on the public URL (a real answer + no
+   regression of the security gates), not just local green.
 
 Feature work: the AI features plan is docs/AI-FEATURES-PLAN.md (+ the roadmap
 html). Each feature is one measured increment; the planner drafts its kickoff into

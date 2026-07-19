@@ -1,6 +1,6 @@
 {
   "test": "F1 routing A/B: keyword router vs embedding intent classifier (free, deterministic, 0 tokens)",
-  "commit": "e1dfec713fa42148544f52c5c6dee1122c9ea9b0",
+  "commit": "c03ce14a625eeeccde33ff2b86861d6c6365013e",
   "as_of": "2026-07-18",
   "hardware": "Windows 11 (build 10.0.26200) | AMD64 | py3.11.9",
   "embedding_model": "all-MiniLM-L6-v2 (ONNX Runtime via fastembed)",
@@ -16,23 +16,23 @@
     ]
   },
   "routing_set_version": "v1",
-  "total": 28,
-  "keyword_accuracy": 0.7143,
-  "embedding_accuracy": 0.9286,
-  "delta": 0.2143,
+  "total": 31,
+  "keyword_accuracy": 0.6452,
+  "embedding_accuracy": 0.8387,
+  "delta": 0.1935,
   "keyword_misroute_subset": {
-    "total": 8,
+    "total": 11,
     "fixed_by_embedding": 6
   },
   "embedding_by_intent": {
-    "doc_lookup": "12/12",
+    "doc_lookup": "12/15",
     "order_status": "3/3",
     "warranty": "4/4",
     "ticket_or_escalation": "2/4",
     "chitchat": "2/2",
     "out_of_scope": "3/3"
   },
-  "low_confidence_fallbacks": 1,
+  "low_confidence_fallbacks": 3,
   "leakage_guard": {
     "threshold": 0.9,
     "max_cosine_over_set": 0.8798,
@@ -40,7 +40,9 @@
   },
   "limitations": [
     "F1-R2 (non-English): prototypes are English-only, so a non-English query (e.g. 'cual es el estado de mi pedido') scores below threshold and falls back to the keyword router (safe, no crash, but may take the wrong path). The corpus and product are English-only, so this is low-impact; multilingual routing would need multilingual prototypes or a language-aware step.",
-    "F1-R3 (threshold noise band): the 0.35 confidence threshold sits in a noise band. Empty/whitespace input scores ~0.381 (above -> tool) while a genuine indirect escalation (r-tik-04) scores 0.302 (below -> deferred and missed). The endpoint rejects empty messages upstream, so the empty-string case is harmless; the threshold is documented rather than overfit to this small set."
+    "F1-R3 (threshold noise band): the 0.35 confidence threshold sits in a noise band. Empty/whitespace input scores ~0.381 (above -> tool) while a genuine indirect escalation (r-tik-04) scores 0.302 (below -> deferred and missed). The endpoint rejects empty messages upstream, so the empty-string case is harmless; the threshold is documented rather than overfit to this small set.",
+    "F1-R5 (over-trigger only PARTIALLY fixed - the honest scope): the intent router does NOT eliminate the day-one keyword over-trigger. Two mechanisms remain, exercised by r-res-01/02/03. (a) FALLBACK: below the 0.35 threshold the router defers to the LEGACY KEYWORD ROUTER, which re-triggers the exact over-trigger bug ('do you support HomeKit?' -> 'support' -> tool; 'can I order replacement parts?' -> 'order' -> tool). (b) EMBEDDER over-trigger: some warranty-COVERAGE phrasings score high on the warranty (status) intent ('is a cracked screen a warranty thing' -> tool at 0.564), though the status tool cannot answer a coverage question. F1 is never WORSE than keyword on these (the fallback equals keyword; both paths still answer), so this is a claim-SCOPE gap, not a regression: the over-trigger flaw is REDUCED, not removed. Fixing the fallback (defaulting low-confidence to RAG) would break the indirect-escalation under-trigger fixes, so it is deferred to a routing v2.",
+    "F1-R6 (stateless routing): routing looks only at the current message and ignores chat_history, so multi-turn STATUS follow-ups misroute. 'is mine covered?' (a warranty-status follow-up about the user's own product) scores rag 0.391, giving a generic policy answer instead of the warranty tool; 'how long does that last?' -> rag 0.360. Degraded, not broken (RAG still answers). A history-aware classifier (feed the last user turn into the input) is a queued routing-v2 refinement, not this increment."
   ],
   "stale_labels": [],
   "gate_failures": [],
@@ -260,6 +262,60 @@
         "warranty": 0.2259
       },
       "keyword_misroute_claimed": false
+    },
+    {
+      "id": "r-res-01",
+      "question": "do you support HomeKit?",
+      "ideal_intent": "doc_lookup",
+      "ideal_route": "rag",
+      "keyword_route": "tool",
+      "keyword_ok": false,
+      "embedding_route": "tool",
+      "embedding_intent": "low_confidence_fallback",
+      "embedding_ok": false,
+      "confidence": 0.3316,
+      "top_scores": {
+        "ticket_or_escalation": 0.3316,
+        "warranty": 0.2543,
+        "doc_lookup": 0.1887
+      },
+      "keyword_misroute_claimed": true
+    },
+    {
+      "id": "r-res-02",
+      "question": "can I order replacement parts?",
+      "ideal_intent": "doc_lookup",
+      "ideal_route": "rag",
+      "keyword_route": "tool",
+      "keyword_ok": false,
+      "embedding_route": "tool",
+      "embedding_intent": "low_confidence_fallback",
+      "embedding_ok": false,
+      "confidence": 0.3087,
+      "top_scores": {
+        "warranty": 0.3087,
+        "ticket_or_escalation": 0.2976,
+        "order_status": 0.2927
+      },
+      "keyword_misroute_claimed": true
+    },
+    {
+      "id": "r-res-03",
+      "question": "is a cracked screen a warranty thing",
+      "ideal_intent": "doc_lookup",
+      "ideal_route": "rag",
+      "keyword_route": "tool",
+      "keyword_ok": false,
+      "embedding_route": "tool",
+      "embedding_intent": "warranty",
+      "embedding_ok": false,
+      "confidence": 0.5642,
+      "top_scores": {
+        "warranty": 0.5642,
+        "doc_lookup": 0.5422,
+        "ticket_or_escalation": 0.3596
+      },
+      "keyword_misroute_claimed": true
     },
     {
       "id": "r-ord-01",

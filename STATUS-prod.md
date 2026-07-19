@@ -1444,9 +1444,12 @@ F1-R1 FIX (post-review de-leak, the CLEAN fix the planner enforced):
   memorization. Both numbers are honest; the delta was never leak-dependent (the
   leak touched the absolute score's validity, not the comparison).
 
-GATE (all met, honest numbers):
-- Routing accuracy: embedding 0.929 vs keyword 0.714 (+0.214) on 28 queries;
-  BEATS keyword. Fixes 6/8 keyword misroutes, including all 3 headline
+GATE (all met; NOTE these 28-item numbers were CORRECTED by F1-R5 on 2026-07-19 -
+the honest widened figures are embedding 0.839 / keyword 0.645 / +0.194 / 6-of-11 on
+a 31-item set that includes over-trigger residuals the router does NOT fix; the
+over-trigger flaw is REDUCED, not removed - see the F1 file's F1-R5 CORRECTION):
+- Routing accuracy: embedding 0.929 vs keyword 0.714 (+0.214) on the ORIGINAL 28
+  queries; BEATS keyword. Fixes 6/8 keyword misroutes, including all 3 headline
   policy-over-trigger cases (route to RAG) and the order under-trigger.
 - INCONVENIENT numbers (disclosed, NOT gamed): 2 misses remain, both mixed-intent
   escalations. r-tik-03 ("thermostat short-cycling ... escalate to a person") reads
@@ -4286,7 +4289,7 @@ The earlier bundled F1 kickoff above is SUPERSEDED by the two-phase F1 in
 docs/increments/F1-intent-routing.md.
 
 ## FEATURE INDEX
-- F1 intent-aware routing -> docs/increments/F1-intent-routing.md  [CLOSED - CLEAN. feat e1dfec7 + docs 84396d3; +0.214 accuracy, leakage guard, zero tokens]
+- F1 intent-aware routing -> docs/increments/F1-intent-routing.md  [CLOSED + F1-R5 CORRECTION DONE. HONEST scope: embedding router beats keyword 0.839 vs 0.645 (+0.194) on a widened 31-item set that now includes realistic over-trigger residuals the router does NOT fix (doc_lookup 12/15; 6/11 keyword misroutes fixed). Over-trigger flaw REDUCED, not removed (low-confidence falls back to the keyword router; F1-R6 stateless routing documented). Zero tokens, leakage guard PASS. The earlier "+0.214 / fixed the flaw" was over-stated - the 28-item eval omitted these cases. Detail in the F1 file.]
 - F2 groundedness + citations -> docs/increments/F2-groundedness-citations.md  [BUILT, GATE MET, awaiting reviewer. Local zero-token groundedness badge (3-state, no-false-green) + extraction-based inline citations (spans are source substrings); threshold 0.5 earned by RAGAS validation; persist-and-replay; hit@5 0.913 + injection + 10/10 authz unregressed; 31 tests green. Build log in the feature file.]
 - F4 sentiment + escalation -> (queued)
 - F5 clarify-before-answer -> (queued)

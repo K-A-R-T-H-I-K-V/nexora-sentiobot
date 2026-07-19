@@ -974,6 +974,23 @@ only know they are independent if you can knock one down and watch the other hol
 We kept the app checks as the belt, but we proved the database is the load-bearing
 control by taking the belt off and pulling.
 
+Transition risk, disclosed (I10-1): the same fail-closed property that makes this
+safe also makes an operational change dangerous, and that coupling has to live in the
+docs. The RLS path works because the app signs its tokens with the project's LEGACY
+SHARED HS256 secret, which is what Postgres validates against. So if someone later
+rotates that secret, or switches the project to asymmetric JWKS signing, WITHOUT
+updating the app first, the database can no longer verify the app's tokens, RLS sees
+no identity, and, because the default is to deny, ALL user-owned data access shuts off
+at once: a silent, total lockout that reads like an outage, not a security win. The
+mitigation is not code, it is knowledge: do not revoke the legacy key, do not change
+the signing scheme without a coordinated app deploy, and adopt Supabase Auth / JWKS
+later as the clean fix. The lesson to carry: when a system fails closed, a
+configuration change to its trust anchor is a production incident waiting to happen,
+so the coupling belongs in AUTHORIZATION.md and .env.example where an operator will
+actually read it before flipping the switch. A fail-closed default is a safety
+feature and a footgun, and honesty about which one it is on a given day is the whole
+point.
+
 ## Part 17 - From brittle keywords to embeddings: intent-aware routing (Feature F1)
 
 This is the first FEATURE increment (P0 to P6 and RLS are all closed). It is also

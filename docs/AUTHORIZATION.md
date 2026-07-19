@@ -27,6 +27,26 @@ There are two clients, used deliberately:
   is real complexity for marginal benefit on a path that is already app-checked
   and denial-suite-covered.
 
+## Transition risk (I10-1): the RLS path depends on the LEGACY shared JWT secret
+
+The user-JWT client above signs its tokens with the project's **legacy SHARED HS256
+JWT secret** (`SUPABASE_JWT_SECRET`), because Postgres/PostgREST validates the token
+against that secret. This is a real operational coupling and must be learnable from
+the docs, not tribal knowledge:
+
+- **Do NOT revoke the legacy JWT secret.** Auth depends on it; it still signs the
+  anon/service keys as well.
+- **Do NOT enable asymmetric signing (ES256/RS256 via JWKS) or rotate the secret
+  without updating the app FIRST.** Because `_user_db()` **fails closed**, the moment
+  the database can no longer verify the app's tokens, RLS sees no valid identity and
+  denies **ALL** user-owned data access (a silent, total lockout that looks like a
+  bug, not a security feature) until the app is redeployed with the new signing
+  scheme. The fail-closed default that makes this safe is the same one that makes a
+  secret change dangerous.
+- **Clean long-term fix:** adopt Supabase Auth (or JWKS / asymmetric verification),
+  which removes the shared-secret coupling. Logged as a future increment, not urgent
+  while the deployed system works.
+
 The app-layer checks from Increment 7 (`require_conversation_owner`,
 `require_analytics_owner`, the tool owner checks) are **kept** as defense in
 depth: they give clean 404/403 responses and a second, independent barrier. RLS
